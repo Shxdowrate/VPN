@@ -161,7 +161,7 @@ namespace VPN.Core
 
             JsonObject config = new JsonObject
             {
-                ["log"] = new JsonObject { ["level"] = "info", ["timestamp"] = true },
+                ["log"] = new JsonObject { ["level"] = "warn", ["timestamp"] = true },
                 ["dns"] = new JsonObject
                 {
                     ["servers"] = new JsonArray

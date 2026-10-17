@@ -193,7 +193,10 @@ namespace VPN.Core
             };
 
             using Process p = Process.Start(info);
-            string output = await p.StandardOutput.ReadToEndAsync() + await p.StandardError.ReadToEndAsync();
+            // Читаем оба потока одновременно, иначе процесс может застрять на переполненном буфере.
+            Task<string> stdout = p.StandardOutput.ReadToEndAsync();
+            Task<string> stderr = p.StandardError.ReadToEndAsync();
+            string output = await stdout + await stderr;
             await p.WaitForExitAsync();
             return p.ExitCode == 0 ? null : LastLines(StripAnsi(output), 6);
         }
