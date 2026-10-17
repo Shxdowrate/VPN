@@ -330,7 +330,7 @@
                     </StackPanel>
 
                     <Grid Grid.Row="2">
-                        <!-- ---------- Туннели ---------- -->
+                        <!-- Туннели -->
                         <ScrollViewer x:Name="PageTunnels" VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
                             <StackPanel>
                                 <TextBlock Text="Всё остальное" Style="{StaticResource H2}" Margin="0,8,0,8"/>
@@ -412,7 +412,7 @@
                             </StackPanel>
                         </ScrollViewer>
 
-                        <!-- ---------- Подписка ---------- -->
+                        <!-- Подписка -->
                         <ScrollViewer x:Name="PageSub" VerticalScrollBarVisibility="Auto" Visibility="Collapsed" Padding="0,0,8,0">
                             <StackPanel>
                                 <TextBlock Text="Ссылка-подписка" Style="{StaticResource H2}" Margin="0,8,0,8"/>
@@ -433,7 +433,7 @@
                             </StackPanel>
                         </ScrollViewer>
 
-                        <!-- ---------- Настройки ---------- -->
+                        <!-- Настройки -->
                         <ScrollViewer x:Name="PageSettings" VerticalScrollBarVisibility="Auto" Visibility="Collapsed" Padding="0,0,8,0">
                             <StackPanel>
                                 <TextBlock Text="Запуск" Style="{StaticResource H2}" Margin="0,8,0,4"/>
@@ -449,7 +449,7 @@
                             </StackPanel>
                         </ScrollViewer>
 
-                        <!-- ---------- Журнал ---------- -->
+                        <!-- Журнал -->
                         <Grid x:Name="PageLog" Visibility="Collapsed">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="*"/>
