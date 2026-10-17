@@ -1,0 +1,76 @@
+name: build
+
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  SINGBOX_VERSION: "1.14.3"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Publish VPN.exe
+        shell: pwsh
+        run: |
+          dotnet publish src/VPN/VPN.csproj -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true -p:DebugType=none -o out/VPN
+
+      - name: Bundle sing-box and rule sets
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $v = $env:SINGBOX_VERSION
+          New-Item -ItemType Directory -Force out/VPN/core, out/VPN/rules | Out-Null
+          Invoke-WebRequest "https://github.com/SagerNet/sing-box/releases/download/v$v/sing-box-$v-windows-amd64.zip" -OutFile sb.zip
+          Expand-Archive sb.zip -DestinationPath sb
+          Copy-Item "sb/sing-box-$v-windows-amd64/*" out/VPN/core/ -Recurse
+          $rules = @{
+            "geoip-ru.srs" = "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ru.srs";
+            "geosite-category-ru.srs" = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ru.srs";
+            "geosite-category-ads-all.srs" = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-all.srs"
+          }
+          foreach ($k in $rules.Keys) { Invoke-WebRequest $rules[$k] -OutFile "out/VPN/rules/$k" }
+          & out/VPN/core/sing-box.exe version
+          Get-ChildItem -Recurse out/VPN | Select-Object FullName, Length | Format-Table -AutoSize
+
+      - name: Check generated config with sing-box
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          dotnet run --project tests/ConfigCheck/ConfigCheck.csproj -c Release -- out/VPN/rules test-config.json
+          if ($LASTEXITCODE -ne 0) { throw "ConfigCheck failed" }
+          foreach ($f in @("test-config.json", "test-config.direct.json")) {
+            & out/VPN/core/sing-box.exe check -c $f
+            if ($LASTEXITCODE -ne 0) { throw "sing-box rejected $f" }
+          }
+          Write-Host "Config OK"
+
+      - name: Zip
+        shell: pwsh
+        run: Compress-Archive -Path out/VPN -DestinationPath VPN-windows-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VPN-windows-x64
+          path: out/VPN
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: VPN-windows-x64.zip
