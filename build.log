@@ -1,0 +1,25 @@
+  Determining projects to restore...
+  Restored D:\a\VPN\VPN\src\VPN\VPN.csproj (in 6.03 sec).
+CSC : warning WFAC010: Remove high DPI settings from D:\a\VPN\VPN\src\VPN\app.manifest and configure via Application.SetHighDpiMode API or 'ApplicationHighDpiMode' project property [D:\a\VPN\VPN\src\VPN\VPN.csproj]
+D:\a\VPN\VPN\src\VPN\MainWindow.xaml.cs(1144,139): warning IL3000: 'System.Reflection.Assembly.Location' always returns an empty string for assemblies embedded in a single-file app. If the path to the app directory is needed, consider calling 'System.AppContext.BaseDirectory'. [D:\a\VPN\VPN\src\VPN\VPN.csproj]
+  VPN -> D:\a\VPN\VPN\src\VPN\bin\Release\net8.0-windows\win-x64\VPN.dll
+  VPN -> D:\a\VPN\VPN\out\VPN\
+Parsed servers: 7, skipped: 0
+  s1 [vless] DE Germany -> de.example.com:443
+  s2 [vless] NL Netherlands gRPC -> nl.example.com:8443
+  s3 [trojan]  Trojan WS -> tr.example.com:443
+  s4 [vmess]  VMess WS -> vm.example.com:443
+  s5 [shadowsocks]  SS -> ss.example.com:8388
+  s6 [hysteria2]  Hy2 -> hy.example.com:443
+  s7 [tuic]  TUIC -> tuic.example.com:443
+Unhandled exception. System.InvalidOperationException: JsonSerializerOptions instance must specify a TypeInfoResolver setting before being marked as read-only.
+   at System.Text.Json.ThrowHelper.ThrowInvalidOperationException_JsonSerializerOptionsNoTypeInfoResolverSpecified()
+   at System.Text.Json.Nodes.JsonValueCustomized`1.WriteTo(Utf8JsonWriter writer, JsonSerializerOptions options)
+   at System.Text.Json.Nodes.JsonArray.WriteTo(Utf8JsonWriter writer, JsonSerializerOptions options)
+   at System.Text.Json.Nodes.JsonObject.WriteTo(Utf8JsonWriter writer, JsonSerializerOptions options)
+   at System.Text.Json.Nodes.JsonArray.WriteTo(Utf8JsonWriter writer, JsonSerializerOptions options)
+   at System.Text.Json.Nodes.JsonObject.WriteTo(Utf8JsonWriter writer, JsonSerializerOptions options)
+   at System.Text.Json.Nodes.JsonNode.WriteToPooledBuffer(JsonSerializerOptions options, JsonWriterOptions writerOptions, Int32 bufferSize)
+   at System.Text.Json.Nodes.JsonNode.ToJsonString(JsonSerializerOptions options)
+   at VPN.Core.ConfigBuilder.Build(AppSettings s, String apiSecret) in D:\a\VPN\VPN\src\VPN\Core\ConfigBuilder.cs:line 215
+   at Program.Main(String[] args) in D:\a\VPN\VPN\tests\ConfigCheck\Program.cs:line 57
