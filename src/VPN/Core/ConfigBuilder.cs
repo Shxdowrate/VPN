@@ -212,7 +212,11 @@ namespace VPN.Core
                 }
             };
 
-            return config.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+            return config.ToJsonString(new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                TypeInfoResolver = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver()
+            });
         }
 
         private static List<string> Values(AppSettings s, RuleKind kind, bool viaVpn) =>

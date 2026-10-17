@@ -1141,7 +1141,7 @@ namespace VPN
             {
                 Text = "VPN — отключено",
                 Visible = true,
-                Icon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath ?? System.Reflection.Assembly.GetEntryAssembly()?.Location ?? "")
+                Icon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath ?? "")
             };
 
             var menu = new System.Windows.Forms.ContextMenuStrip();
