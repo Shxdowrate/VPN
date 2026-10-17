@@ -28,7 +28,8 @@ jobs:
         run: |
           dotnet publish src/VPN/VPN.csproj -c Release -r win-x64 --self-contained true `
             -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-            -p:EnableCompressionInSingleFile=true -p:DebugType=none -o out/VPN
+            -p:EnableCompressionInSingleFile=true -p:DebugType=none -o out/VPN 2>&1 | Tee-Object -FilePath build.log
+          if ($LASTEXITCODE -ne 0) { throw "publish failed" }
 
       - name: Bundle sing-box and rule sets
         shell: pwsh
@@ -52,13 +53,25 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          dotnet run --project tests/ConfigCheck/ConfigCheck.csproj -c Release -- out/VPN/rules test-config.json
+          dotnet run --project tests/ConfigCheck/ConfigCheck.csproj -c Release -- out/VPN/rules test-config.json 2>&1 | Tee-Object -FilePath build.log -Append
           if ($LASTEXITCODE -ne 0) { throw "ConfigCheck failed" }
           foreach ($f in @("test-config.json", "test-config.direct.json")) {
-            & out/VPN/core/sing-box.exe check -c $f
-            if ($LASTEXITCODE -ne 0) { throw "sing-box rejected $f" }
+            & out/VPN/core/sing-box.exe check -c $f 2>&1 | Tee-Object -FilePath build.log -Append
+            if ($LASTEXITCODE -ne 0) { Get-Content $f | Add-Content build.log; throw "sing-box rejected $f" }
           }
           Write-Host "Config OK"
+
+      - name: Publish build log on failure
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/logrepo && cp build.log /tmp/logrepo/ 2>/dev/null || echo "no log" > /tmp/logrepo/build.log
+          cd /tmp/logrepo
+          git init -q && git config user.name ci && git config user.email ci@users.noreply.github.com
+          git add -A && git commit -qm "build log for $GITHUB_SHA"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}" HEAD:ci-logs
 
       - name: Zip
         shell: pwsh
