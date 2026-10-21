@@ -54,7 +54,15 @@ internal static class Program
             }
         };
 
-        File.WriteAllText(output, ConfigBuilder.Build(settings, "testsecret"));
+        string full = ConfigBuilder.Build(settings, "testsecret", 19091);
+
+        if (!full.Contains("\"probe-in\""))
+        {
+            Console.Error.WriteLine("Probe inbound missing");
+            return 1;
+        }
+
+        File.WriteAllText(output, full);
 
         // Второй вариант: «всё напрямую, через VPN только выбранное» — тоже должен быть валидным.
         settings.DefaultViaVpn = false;

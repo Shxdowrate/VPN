@@ -45,6 +45,28 @@ namespace VPN.Core
         public bool AutoConnect { get; set; }
         public int SubscriptionUpdateHours { get; set; } = 12;
 
+        /// <summary>Переподключаться, если движок упал или связь пропала.</summary>
+        public bool AutoReconnect { get; set; } = true;
+
+        /// <summary>Системные уведомления Windows, когда окно скрыто или неактивно.</summary>
+        public bool Notifications { get; set; } = true;
+
+        /// <summary>Ctrl+Alt+V — включить/выключить VPN из любого места.</summary>
+        public bool Hotkey { get; set; } = true;
+
+        public bool Topmost { get; set; }
+
+        /// <summary>Избранные серверы — по имени: теги меняются при обновлении подписки, а имена обычно нет.</summary>
+        public List<string> Favorites { get; set; } = new List<string>();
+
+        public bool SortByPing { get; set; }
+
+        /// <summary>Положение и размер «смартфона» (без левой панели). NaN — по центру экрана.</summary>
+        public double WindowLeft { get; set; } = double.NaN;
+        public double WindowTop { get; set; } = double.NaN;
+        public double WindowWidth { get; set; }
+        public double WindowHeight { get; set; }
+
         public DateTime LastSubscriptionUpdate { get; set; }
         public string SubscriptionTitle { get; set; } = "";
         public long TrafficUsed { get; set; }
@@ -55,6 +77,8 @@ namespace VPN.Core
         private static readonly JsonSerializerOptions Options = new JsonSerializerOptions
         {
             WriteIndented = true,
+            // NaN в положении окна («ещё не сохраняли») — без этого сериализатор падает.
+            NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
             Converters = { new JsonStringEnumConverter() }
         };
 
@@ -70,6 +94,7 @@ namespace VPN.Core
                     {
                         loaded.Rules ??= new List<RouteRule>();
                         loaded.Servers ??= new List<ServerProfile>();
+                        loaded.Favorites ??= new List<string>();
                         return loaded;
                     }
                 }

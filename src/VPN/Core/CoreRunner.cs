@@ -15,6 +15,26 @@ namespace VPN.Core
 
         public string ApiSecret { get; private set; } = "";
 
+        /// <summary>Порт локального «зонда» (SOCKS на 127.0.0.1) — им программа проверяет внешний IP через VPN. 0 — нет.</summary>
+        public int ProbePort { get; private set; }
+
+        /// <summary>Свободный порт на 127.0.0.1: занятый фиксированный порт уронил бы движок при старте.</summary>
+        private static int FreePort()
+        {
+            try
+            {
+                var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+                listener.Start();
+                int port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+                listener.Stop();
+                return port;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
         /// <summary>Движок завершился сам (ошибка, вылет). Аргумент — последние строки вывода.</summary>
         public event Action<string> Crashed;
 
@@ -58,8 +78,9 @@ namespace VPN.Core
             }
 
             ApiSecret = Guid.NewGuid().ToString("N");
+            ProbePort = FreePort();
             Directory.CreateDirectory(Paths.Data);
-            await File.WriteAllTextAsync(Paths.Config, ConfigBuilder.Build(settings, ApiSecret));
+            await File.WriteAllTextAsync(Paths.Config, ConfigBuilder.Build(settings, ApiSecret, ProbePort));
 
             string check = await RunOnceAsync("check -c \"" + Paths.Config + "\"");
 

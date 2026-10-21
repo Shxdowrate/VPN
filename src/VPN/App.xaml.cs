@@ -44,7 +44,7 @@ namespace VPN
         private void OnUiError(object sender, DispatcherUnhandledExceptionEventArgs e)
         {
             Log.Write("Ошибка: " + e.Exception);
-            MessageBox.Show("Что-то пошло не так:\n" + e.Exception.Message + "\n\nПодробности — в журнале (меню слева).", "VPN",
+            MessageBox.Show("Что-то пошло не так:\n" + e.Exception.Message + "\n\nПодробности — в журнале («Настройки» → «Журнал»).", "VPN",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             e.Handled = true;
         }

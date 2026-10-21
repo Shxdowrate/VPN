@@ -1,16 +1,18 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -23,11 +25,14 @@ namespace VPN
 {
     public partial class MainWindow : Window
     {
+        /// <summary>Что сейчас происходит с туннелем.</summary>
         private enum State
         {
             Off,
             Connecting,
-            On
+            On,
+            Switching,
+            Reconnecting
         }
 
         /// <summary>Готовые наборы сайтов, которые обычно нужны через VPN.</summary>
@@ -43,15 +48,19 @@ namespace VPN
             ("Spotify", new[] { "spotify.com", "scdn.co", "spotifycdn.com" })
         };
 
+        /// <summary>Паузы между попытками переподключения.</summary>
+        private static readonly int[] ReconnectDelays = { 1, 3, 5, 10, 20 };
+
         private readonly AppSettings settings;
         private readonly CoreRunner runner = new CoreRunner();
+        private readonly SemaphoreSlim engineGate = new SemaphoreSlim(1, 1);
         private readonly ObservableCollection<ServerItem> servers = new ObservableCollection<ServerItem>();
         private readonly ObservableCollection<RuleItem> apps = new ObservableCollection<RuleItem>();
         private readonly ObservableCollection<RuleItem> sites = new ObservableCollection<RuleItem>();
         private readonly DispatcherTimer tick = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         private readonly DispatcherTimer applyDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
         private readonly DispatcherTimer subTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(30) };
-        private readonly DispatcherTimer toastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        private readonly DispatcherTimer toastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3.2) };
         private readonly Queue<double> downHistory = new Queue<double>();
         private readonly Queue<double> upHistory = new Queue<double>();
         private readonly Queue<bool> pingHistory = new Queue<bool>();
@@ -59,17 +68,27 @@ namespace VPN
         private State state = State.Off;
         private CoreApi api;
         private CancellationTokenSource sessionCts;
+        private CancellationTokenSource reconnectCts;
         private DateTime connectedAt;
         private int tickCount;
         private bool loading = true;
         private bool busy;
         private bool started;
-        private bool reallyExit;
-        private bool trayHintShown;
         private bool selectingServer;
-        private System.Windows.Forms.NotifyIcon tray;
-        private System.Windows.Forms.ToolStripMenuItem trayToggle;
         private List<Candidate> candidates = new List<Candidate>();
+
+        /// <summary>Последняя ошибка подключения — показываем её, пока не нажмут кнопку снова.</summary>
+        private string lastError;
+
+        /// <summary>Сервер, через который реально идёт трафик (в «Авто» его выбирает движок).</summary>
+        private string actualTag = "";
+        private string autoChoice = "";
+        private int? lastDelay;
+        private int failStreak;
+        private bool noResponseWarned;
+        private int switchVersion;
+        private string exitIp = "";
+        private Action toastAction;
 
         public MainWindow(bool startMinimized)
         {
@@ -87,20 +106,9 @@ namespace VPN
                 await ApplyChangesAsync();
             };
             subTimer.Tick += async (_, _) => await MaybeRefreshSubscriptionAsync(false);
-            toastTimer.Tick += (_, _) =>
-            {
-                toastTimer.Stop();
-                Fade(Toast, 0, 250);
-            };
+            toastTimer.Tick += (_, _) => HideToast();
 
-            runner.Crashed += tail => Dispatcher.BeginInvoke(new Action(async () =>
-            {
-                if (state != State.Off)
-                {
-                    await DisconnectAsync();
-                    ShowToast("VPN отключился: " + LastLine(tail));
-                }
-            }));
+            runner.Crashed += tail => Dispatcher.BeginInvoke(new Action(async () => await OnEngineCrashedAsync(tail)));
 
             // Журнал обновляет экран только когда он открыт — иначе поток интерфейса не трогаем.
             Log.Added += line =>
@@ -115,9 +123,7 @@ namespace VPN
                 }
             };
 
-            SourceInitialized += (_, _) => ApplyWindowLook();
-            StateChanged += (_, _) => RootGrid.Margin = WindowState == WindowState.Maximized ? new Thickness(7) : new Thickness(0);
-
+            InitShell();
             BuildPresets();
             LoadIntoUi();
             CreateTray();
@@ -156,30 +162,6 @@ namespace VPN
             }
         }
 
-        // ================================================================== внешний вид окна
-
-        [DllImport("dwmapi.dll")]
-        private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
-
-        /// <summary>Тёмная рамка и скруглённые углы Windows 11 (на Windows 10 просто тёмная рамка).</summary>
-        private void ApplyWindowLook()
-        {
-            try
-            {
-                IntPtr hwnd = new WindowInteropHelper(this).Handle;
-                int dark = 1;
-                DwmSetWindowAttribute(hwnd, 20, ref dark, sizeof(int));
-                int round = 2;
-                DwmSetWindowAttribute(hwnd, 33, ref round, sizeof(int));
-                int border = 0x00383023; // цвет рамки (BGR) — под цвет обводок
-                DwmSetWindowAttribute(hwnd, 34, ref border, sizeof(int));
-            }
-            catch
-            {
-                // старая Windows — не страшно
-            }
-        }
-
         // ================================================================== загрузка в интерфейс
 
         private void LoadIntoUi()
@@ -205,6 +187,12 @@ namespace VPN
             AutostartCheck.IsChecked = settings.Autostart;
             MinimizedCheck.IsChecked = settings.StartMinimized;
             AutoConnectCheck.IsChecked = settings.AutoConnect;
+            ReconnectCheck.IsChecked = settings.AutoReconnect;
+            NotifyCheck.IsChecked = settings.Notifications;
+            HotkeyCheck.IsChecked = settings.Hotkey;
+            TopmostCheck.IsChecked = settings.Topmost;
+            SortPing.IsChecked = settings.SortByPing;
+            SortList.IsChecked = !settings.SortByPing;
 
             string version = typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "";
             AboutText.Text = "VPN " + version + " — свой клиент на движке sing-box.\n" +
@@ -228,6 +216,7 @@ namespace VPN
         {
             selectingServer = true;
             string current = settings.SelectedServer;
+            var favorites = new HashSet<string>(settings.Favorites, StringComparer.OrdinalIgnoreCase);
             servers.Clear();
             servers.Add(new ServerItem
             {
@@ -235,8 +224,11 @@ namespace VPN
                 Code = "AUTO",
                 Title = "Самый быстрый",
                 Subtitle = "выбирается автоматически",
+                Index = -1,
                 IsSelected = current == "auto" || settings.Servers.All(s => s.Tag != current)
             });
+
+            int index = 0;
 
             foreach (ServerProfile s in settings.Servers)
             {
@@ -244,38 +236,87 @@ namespace VPN
                 servers.Add(new ServerItem
                 {
                     Tag = s.Tag,
+                    Name = s.Name,
                     Code = code.Length > 0 ? code : "··",
                     Title = Subscription.CleanName(s.Name),
                     Subtitle = s.Protocol + " · " + s.Host,
                     Host = s.Host,
                     Port = s.Port,
+                    Index = index++,
+                    IsFavorite = favorites.Contains(s.Name),
                     IsSelected = s.Tag == current
                 });
             }
 
             ServersList.SelectedItem = servers.FirstOrDefault(s => s.IsSelected);
             selectingServer = false;
-            ServerCount.Text = settings.Servers.Count > 0 ? settings.Servers.Count + " шт." : "добавь подписку";
-            FilterServers();
+            ServerCount.Text = settings.Servers.Count > 0 ? settings.Servers.Count + " серверов" : "добавь подписку";
+            ApplyServerView();
             UpdateCurrentServerCard();
+        }
+
+        /// <summary>Порядок: «Авто», избранные, остальные; внутри — как в подписке или по пингу.</summary>
+        private void ApplyServerView()
+        {
+            if (CollectionViewSource.GetDefaultView(servers) is not ListCollectionView view)
+            {
+                return;
+            }
+
+            string q = ServerSearch.Text.Trim();
+
+            using (view.DeferRefresh())
+            {
+                view.CustomSort = new ServerOrder(settings.SortByPing);
+                view.Filter = q.Length == 0
+                    ? null
+                    : o => o is ServerItem s && (s.Tag == "auto" || s.Title.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                                                 s.Code.Contains(q, StringComparison.OrdinalIgnoreCase));
+            }
         }
 
         private void UpdateCurrentServerCard()
         {
-            ServerItem selected = servers.FirstOrDefault(s => s.IsSelected) ?? servers.FirstOrDefault();
+            ServerItem selected = SelectedServerItem();
 
             if (selected == null)
             {
                 return;
             }
 
-            CurrentCode.Text = selected.Code;
+            CurrentCode.Text = selected.Tag == "auto" && ActualServer() is ServerItem real ? real.Code : selected.Code;
             CurrentServer.Text = selected.Tag == "auto" && !string.IsNullOrEmpty(autoChoice) ? "Авто → " + autoChoice : selected.Title;
-            CurrentPing.Text = selected.PingText == "…" ? "" : selected.PingText;
-            CurrentPing.Foreground = selected.PingBrush;
+
+            if (IsConnected && lastDelay.HasValue)
+            {
+                CurrentPing.Text = lastDelay + " мс";
+                CurrentPing.Foreground = PingBrush(lastDelay);
+            }
+            else
+            {
+                CurrentPing.Text = selected.PingText == "…" ? "" : selected.PingText;
+                CurrentPing.Foreground = selected.PingBrush;
+            }
         }
 
-        private string autoChoice = "";
+        private ServerItem SelectedServerItem() => servers.FirstOrDefault(s => s.IsSelected) ?? servers.FirstOrDefault();
+
+        private ServerItem ActualServer() => string.IsNullOrEmpty(actualTag) ? null : servers.FirstOrDefault(s => s.Tag == actualTag);
+
+        /// <summary>Понятное имя сервера, через который идёт трафик.</summary>
+        private string ActualServerTitle()
+        {
+            ServerItem selected = SelectedServerItem();
+
+            if (selected?.Tag == "auto")
+            {
+                return string.IsNullOrEmpty(autoChoice) ? "авто" : autoChoice;
+            }
+
+            return selected?.Title ?? "";
+        }
+
+        private bool IsConnected => state == State.On || state == State.Switching;
 
         private void UpdateSubscriptionCard()
         {
@@ -290,7 +331,7 @@ namespace VPN
                 return;
             }
 
-            double barWidth = 600;
+            double barWidth = SubBarTrack.ActualWidth > 0 ? SubBarTrack.ActualWidth : 340;
 
             if (settings.TrafficTotal > 0)
             {
@@ -299,7 +340,7 @@ namespace VPN
             }
             else
             {
-                SubTrafficText.Text = "Использовано " + Format.Size(settings.TrafficUsed) + " · трафик без лимита";
+                SubTrafficText.Text = "Использовано " + Format.Size(settings.TrafficUsed) + " · без лимита";
                 SubBar.Width = 0;
             }
 
@@ -307,7 +348,8 @@ namespace VPN
             {
                 DateTime expire = DateTimeOffset.FromUnixTimeSeconds(settings.ExpireUnix).LocalDateTime;
                 int days = (int)Math.Ceiling((expire - DateTime.Now).TotalDays);
-                SubExpireText.Text = days > 0 ? "до " + expire.ToString("dd.MM.yyyy") + " (" + days + " дн.)" : "срок истёк";
+                SubExpireText.Text = days > 0 ? "до " + expire.ToString("dd.MM.yyyy") + " · " + days + " дн." : "срок истёк";
+                SubExpireText.Foreground = (Brush)FindResource(days <= 0 ? "Danger" : days <= 3 ? "Warn" : "SubText");
             }
             else
             {
@@ -326,6 +368,18 @@ namespace VPN
             var press = new DoubleAnimation(0.94, 1, TimeSpan.FromMilliseconds(220)) { EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.6 } };
             PowerScale.BeginAnimation(ScaleTransform.ScaleXProperty, press);
             PowerScale.BeginAnimation(ScaleTransform.ScaleYProperty, press);
+            await ToggleAsync();
+        }
+
+        /// <summary>Кнопка, трей и горячая клавиша делают одно и то же.</summary>
+        private async Task ToggleAsync()
+        {
+            if (state == State.Reconnecting)
+            {
+                // Переподключение можно прервать — пользователь передумал.
+                await DisconnectAsync();
+                return;
+            }
 
             if (busy)
             {
@@ -342,14 +396,15 @@ namespace VPN
             }
         }
 
-        private async Task ConnectAsync()
+        private async Task<bool> ConnectAsync()
         {
             if (busy)
             {
-                return;
+                return false;
             }
 
             busy = true;
+            lastError = null;
             SetState(State.Connecting);
 
             try
@@ -359,34 +414,79 @@ namespace VPN
                     await MaybeRefreshSubscriptionAsync(true);
                 }
 
-                string error = await runner.StartAsync(settings);
+                string error = await StartEngineAsync();
 
                 if (error != null)
                 {
                     Log.Write(error);
+                    lastError = error;
                     SetState(State.Off);
-                    SubStatus.Text = Shorten(error, 260);
-                    return;
+                    SystemNotify("Не удалось подключиться", Shorten(LastLine(error), 120), System.Windows.Forms.ToolTipIcon.Error);
+                    return false;
                 }
 
-                StartSession();
-                connectedAt = DateTime.Now;
-                pingHistory.Clear();
-                tickCount = 0;
-                SetState(State.On);
-                tick.Start();
-                _ = MeasurePingAsync();
+                await OnEngineUpAsync(resetSession: true);
+                SystemNotify("VPN подключён", "Сервер: " + ActualServerTitle(), System.Windows.Forms.ToolTipIcon.Info);
+                return true;
             }
             catch (Exception ex)
             {
                 Log.Write("Подключение: " + ex);
+                lastError = ex.Message;
                 SetState(State.Off);
-                SubStatus.Text = Shorten(ex.Message, 260);
+                return false;
             }
             finally
             {
                 busy = false;
             }
+        }
+
+        /// <summary>Движок поднялся: связь с API, нужный сервер, статистика.</summary>
+        private async Task OnEngineUpAsync(bool resetSession)
+        {
+            StartSession();
+
+            if (resetSession)
+            {
+                connectedAt = DateTime.Now;
+                pingHistory.Clear();
+                tickCount = 0;
+            }
+
+            failStreak = 0;
+            noResponseWarned = false;
+            actualTag = "";
+
+            // Движок помнит последний выбранный сервер в своём кэше и при старте берёт его, а не тот, что в конфиге.
+            // Поэтому выбор из программы ставим явно, иначе после переподключения тихо оказываемся не на том сервере.
+            await SelectWithRetryAsync(settings.SelectedServer);
+
+            SetState(State.On);
+            tick.Start();
+            await MeasurePingAsync();
+            _ = RefreshExitInfoAsync();
+        }
+
+        private async Task<bool> SelectWithRetryAsync(string tag)
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                if (api == null)
+                {
+                    return false;
+                }
+
+                if (await api.SelectAsync(tag))
+                {
+                    return true;
+                }
+
+                await Task.Delay(400);
+            }
+
+            Log.Write("Не удалось выбрать сервер " + tag + " через API движка");
+            return false;
         }
 
         /// <summary>Связь с движком и поток скорости.</summary>
@@ -404,8 +504,39 @@ namespace VPN
                 (up, down) => Dispatcher.BeginInvoke(new Action(() => OnTraffic(up, down)), DispatcherPriority.Background), token));
         }
 
+        private async Task<string> StartEngineAsync()
+        {
+            await engineGate.WaitAsync();
+
+            try
+            {
+                sessionCts?.Cancel();
+                return await runner.StartAsync(settings);
+            }
+            finally
+            {
+                engineGate.Release();
+            }
+        }
+
+        private async Task StopEngineAsync()
+        {
+            await engineGate.WaitAsync();
+
+            try
+            {
+                await runner.StopAsync();
+            }
+            finally
+            {
+                engineGate.Release();
+            }
+        }
+
         private async Task DisconnectAsync()
         {
+            bool wasOn = state != State.Off;
+            reconnectCts?.Cancel();
             busy = true;
 
             try
@@ -413,17 +544,106 @@ namespace VPN
                 tick.Stop();
                 sessionCts?.Cancel();
                 sessionCts = null;
-                await runner.StopAsync();
+                await StopEngineAsync();
                 api?.Dispose();
                 api = null;
                 autoChoice = "";
+                actualTag = "";
+                lastDelay = null;
+                exitIp = "";
                 SetState(State.Off);
                 UpdateCurrentServerCard();
+
+                if (wasOn)
+                {
+                    SystemNotify("VPN отключён", "Трафик идёт напрямую", System.Windows.Forms.ToolTipIcon.None);
+                }
             }
             finally
             {
                 busy = false;
             }
+        }
+
+        /// <summary>Движок упал сам. Если можно — тихо поднимаем заново, иначе честно говорим, что VPN выключен.</summary>
+        private async Task OnEngineCrashedAsync(string tail)
+        {
+            if (state == State.Off || state == State.Connecting || state == State.Reconnecting)
+            {
+                return;
+            }
+
+            string reason = LastLine(tail);
+
+            if (!settings.AutoReconnect)
+            {
+                await DisconnectAsync();
+                lastError = "Движок остановился: " + reason;
+                SetState(State.Off);
+                ShowToast("VPN отключился: " + reason, ToastKind.Error);
+                SystemNotify("VPN отключился", reason, System.Windows.Forms.ToolTipIcon.Warning);
+                return;
+            }
+
+            await ReconnectLoopAsync(reason);
+        }
+
+        private async Task ReconnectLoopAsync(string reason)
+        {
+            reconnectCts?.Cancel();
+            var cts = new CancellationTokenSource();
+            reconnectCts = cts;
+            tick.Stop();
+            sessionCts?.Cancel();
+            SystemNotify("Связь оборвалась", "Переподключаюсь…", System.Windows.Forms.ToolTipIcon.Warning);
+            Log.Write("Переподключение: " + reason);
+
+            string error = reason;
+
+            for (int attempt = 1; attempt <= ReconnectDelays.Length; attempt++)
+            {
+                SetState(State.Reconnecting, "Попытка " + attempt + " из " + ReconnectDelays.Length);
+
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(ReconnectDelays[attempt - 1]), cts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+
+                busy = true;
+
+                try
+                {
+                    error = await StartEngineAsync();
+                }
+                finally
+                {
+                    busy = false;
+                }
+
+                if (cts.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                if (error == null)
+                {
+                    await OnEngineUpAsync(resetSession: false);
+                    ShowToast("Связь восстановлена", ToastKind.Success);
+                    SystemNotify("Связь восстановлена", "Сервер: " + ActualServerTitle(), System.Windows.Forms.ToolTipIcon.Info);
+                    return;
+                }
+
+                Log.Write("Попытка " + attempt + ": " + LastLine(error));
+            }
+
+            await DisconnectAsync();
+            lastError = "Не удалось переподключиться: " + LastLine(error);
+            SetState(State.Off);
+            SystemNotify("VPN отключён", "Не удалось переподключиться", System.Windows.Forms.ToolTipIcon.Error);
         }
 
         /// <summary>Правила поменялись: если подключены — тихо перезапускаем движок.</summary>
@@ -440,20 +660,20 @@ namespace VPN
 
             try
             {
-                sessionCts?.Cancel();
-                string error = await runner.StartAsync(settings);
+                string error = await StartEngineAsync();
 
                 if (error != null)
                 {
                     Log.Write(error);
                     busy = false;
                     await DisconnectAsync();
-                    SubStatus.Text = Shorten(error, 260);
+                    lastError = error;
+                    SetState(State.Off);
                     return;
                 }
 
-                StartSession();
-                ShowToast("Правила применены");
+                await OnEngineUpAsync(resetSession: false);
+                ShowToast("Правила применены", ToastKind.Success);
             }
             finally
             {
@@ -478,7 +698,7 @@ namespace VPN
 
         private void OnTraffic(long up, long down)
         {
-            if (state != State.On)
+            if (!IsConnected)
             {
                 return;
             }
@@ -522,7 +742,7 @@ namespace VPN
 
         private async void OnTick(object sender, EventArgs e)
         {
-            if (state != State.On || api == null)
+            if (!IsConnected || api == null)
             {
                 return;
             }
@@ -534,13 +754,13 @@ namespace VPN
             {
                 var (up, down) = await api.TotalsAsync();
 
-                if (state == State.On)
+                if (IsConnected)
                 {
                     TotalRun.Text = " · " + Format.Size(up + down);
                 }
             }
 
-            if (tickCount % 5 == 0)
+            if (tickCount % 5 == 0 && state == State.On)
             {
                 await MeasurePingAsync();
             }
@@ -563,6 +783,7 @@ namespace VPN
                 return;
             }
 
+            lastDelay = delay;
             pingHistory.Enqueue(delay.HasValue);
 
             while (pingHistory.Count > 20)
@@ -574,16 +795,148 @@ namespace VPN
             PingRun.Foreground = PingBrush(delay);
             int lost = pingHistory.Count(ok => !ok);
             LossRun.Text = " · " + (lost * 100 / pingHistory.Count) + "%";
-            SideDetail.Text = (delay.HasValue ? delay + " мс" : "нет ответа") + " · " + Format.Duration(DateTime.Now - connectedAt);
+
+            TrackActualServer(now);
+            UpdateCurrentServerCard();
+            TrackHealth(delay);
+            UpdatePill();
+            UpdateTray();
+        }
+
+        /// <summary>Следим, через какой сервер реально идёт трафик, и сообщаем, если он сменился сам.</summary>
+        private void TrackActualServer(string now)
+        {
+            if (string.IsNullOrEmpty(now))
+            {
+                return;
+            }
+
+            bool auto = settings.SelectedServer == "auto";
+
+            if (!auto && now != settings.SelectedServer && now != "auto")
+            {
+                // Движок оказался не на том сервере (например, из своего кэша) — молча возвращаем выбранный.
+                Log.Write("Движок на сервере " + now + ", а выбран " + settings.SelectedServer + " — исправляю");
+                _ = api?.SelectAsync(settings.SelectedServer);
+                return;
+            }
 
             ServerProfile server = settings.Servers.FirstOrDefault(s => s.Tag == now);
-            autoChoice = server != null && settings.SelectedServer == "auto" ? Subscription.CleanName(server.Name) : "";
-            UpdateCurrentServerCard();
+            string previous = actualTag;
+            actualTag = now;
+            autoChoice = server != null && auto ? Subscription.CleanName(server.Name) : "";
 
+            if (auto && !string.IsNullOrEmpty(previous) && previous != now && server != null)
+            {
+                string text = "Авто: переключился на " + autoChoice + (lastDelay.HasValue ? " · " + lastDelay + " мс" : "");
+                Log.Write(text);
+                ShowToast(text, ToastKind.Info);
+                SystemNotify("Сервер сменился", text, System.Windows.Forms.ToolTipIcon.Info);
+                _ = RefreshExitInfoAsync();
+            }
+        }
+
+        /// <summary>Сервер перестал отвечать — предупреждаем один раз, пока связь не вернётся.</summary>
+        private void TrackHealth(int? delay)
+        {
             if (delay.HasValue)
             {
-                CurrentPing.Text = delay + " мс";
-                CurrentPing.Foreground = PingBrush(delay);
+                if (noResponseWarned)
+                {
+                    noResponseWarned = false;
+                    ShowToast("Сервер снова отвечает · " + delay + " мс", ToastKind.Success);
+                    SetState(State.On, animate: true);
+                }
+
+                failStreak = 0;
+                return;
+            }
+
+            failStreak++;
+
+            if (failStreak >= 3 && !noResponseWarned)
+            {
+                noResponseWarned = true;
+                SetState(State.On, animate: true);
+
+                if (settings.SelectedServer != "auto" && settings.Servers.Count > 1)
+                {
+                    ShowToast("Сервер не отвечает", ToastKind.Warning, "На «Авто»", () => ChooseServer(servers.FirstOrDefault(s => s.Tag == "auto")));
+                }
+                else
+                {
+                    ShowToast("Сервер не отвечает — проверь интернет", ToastKind.Warning);
+                }
+
+                SystemNotify("Сервер не отвечает", "VPN включён, но ответа нет уже " + failStreak * 5 + " с", System.Windows.Forms.ToolTipIcon.Warning);
+            }
+        }
+
+        /// <summary>Внешний IP и страна через VPN — показываем под кнопкой.</summary>
+        private async Task RefreshExitInfoAsync()
+        {
+            if (!IsConnected)
+            {
+                return;
+            }
+
+            IpChip.Visibility = Visibility.Visible;
+            IpText.Text = "определяю IP…";
+            int port = runner.ProbePort;
+            string secret = runner.ApiSecret;
+            var info = await CoreApi.ExitInfoAsync(port, secret);
+
+            if (!IsConnected)
+            {
+                return;
+            }
+
+            if (info == null)
+            {
+                exitIp = "";
+                IpText.Text = "IP не определился";
+                return;
+            }
+
+            exitIp = info.Value.ip;
+            string country = CountryName(info.Value.country);
+            IpText.Text = "IP " + exitIp + (country.Length > 0 ? " · " + country : "");
+        }
+
+        private static string CountryName(string code)
+        {
+            if (string.IsNullOrWhiteSpace(code) || code.Length != 2)
+            {
+                return "";
+            }
+
+            try
+            {
+                // На русской Windows — «Нидерланды», на английской — «Netherlands».
+                return new RegionInfo(code).DisplayName;
+            }
+            catch
+            {
+                return code.ToUpperInvariant();
+            }
+        }
+
+        private void OnIpCopy(object sender, RoutedEventArgs e)
+        {
+            if (exitIp.Length == 0)
+            {
+                _ = RefreshExitInfoAsync();
+                return;
+            }
+
+            try
+            {
+                Clipboard.SetText(exitIp);
+                ShowToast("IP скопирован", ToastKind.Success);
+            }
+            catch
+            {
+                ShowToast("Не удалось скопировать", ToastKind.Error);
             }
         }
 
@@ -598,7 +951,7 @@ namespace VPN
 
             try
             {
-                CoreApi current = state == State.On ? api : null;
+                CoreApi current = IsConnected ? api : null;
                 Brush faint = (Brush)FindResource("Faint");
 
                 foreach (ServerItem item in servers.Where(s => s.Tag != "auto"))
@@ -638,6 +991,11 @@ namespace VPN
                     auto.Subtitle = best != null ? "сейчас лучший: " + best.Title : "выбирается автоматически";
                 }
 
+                if (settings.SortByPing)
+                {
+                    ApplyServerView();
+                }
+
                 UpdateCurrentServerCard();
             }
             finally
@@ -656,51 +1014,100 @@ namespace VPN
             return (Brush)FindResource(ms < 120 ? "Accent" : ms < 250 ? "Warn" : "Danger");
         }
 
-        // ================================================================== состояния кнопки
+        // ================================================================== статусы
 
-        private void SetState(State next, bool animate = true)
+        private static readonly Color Grey = Color.FromRgb(0x56, 0x60, 0x7A);
+        private static readonly Color RingGrey = Color.FromRgb(0x2A, 0x32, 0x42);
+        private static readonly Color Green = Color.FromRgb(0x3D, 0xDC, 0x97);
+        private static readonly Color Amber = Color.FromRgb(0xFF, 0xB3, 0x47);
+        private static readonly Color Blue = Color.FromRgb(0x2B, 0xB3, 0xFF);
+        private static readonly Color Red = Color.FromRgb(0xFF, 0x5C, 0x6C);
+
+        private void SetState(State next, string detail = null, bool animate = true)
         {
             state = next;
             int ms = animate ? 350 : 1;
             Color ring;
             Color icon;
+            Color aura;
             double glow;
+            bool spin = false;
+            Color spinColor = Amber;
 
             switch (next)
             {
                 case State.Connecting:
                     ring = Color.FromRgb(0x4A, 0x3E, 0x24);
-                    icon = Color.FromRgb(0xFF, 0xB3, 0x47);
+                    icon = Amber;
+                    aura = Amber;
                     glow = 0;
+                    spin = true;
                     StatusText.Text = "Подключение…";
-                    SubStatus.Text = "Запускаю туннель";
-                    SideStatus.Text = "Подключение…";
-                    SideDot.Fill = (Brush)FindResource("Warn");
-                    SideDetail.Text = "";
-                    StartSpinner();
+                    SubStatus.Text = detail ?? "Запускаю туннель";
+                    break;
+
+                case State.Reconnecting:
+                    ring = Color.FromRgb(0x4A, 0x3E, 0x24);
+                    icon = Amber;
+                    aura = Amber;
+                    glow = 0;
+                    spin = true;
+                    StatusText.Text = "Переподключение…";
+                    SubStatus.Text = "Связь оборвалась · " + (detail ?? "пробую снова");
+                    break;
+
+                case State.Switching:
+                    ring = Color.FromRgb(0x1E, 0x3A, 0x4E);
+                    icon = Blue;
+                    aura = Blue;
+                    glow = 0.5;
+                    spin = true;
+                    spinColor = Blue;
+                    StatusText.Text = "Смена сервера…";
+                    SubStatus.Text = detail ?? "Переключаю";
                     break;
 
                 case State.On:
-                    ring = Color.FromRgb(0x3D, 0xDC, 0x97);
-                    icon = Color.FromRgb(0x3D, 0xDC, 0x97);
-                    glow = 1;
-                    StatusText.Text = "Подключено";
-                    SubStatus.Text = "Трафик защищён · правила туннелей работают";
-                    SideStatus.Text = "Подключено";
-                    SideDot.Fill = (Brush)FindResource("Accent");
-                    StopSpinner();
+                    if (noResponseWarned)
+                    {
+                        ring = Amber;
+                        icon = Amber;
+                        aura = Amber;
+                        glow = 0.4;
+                        StatusText.Text = "Нет ответа";
+                        SubStatus.Text = "VPN включён, но сервер молчит · " + ActualServerTitle();
+                    }
+                    else
+                    {
+                        ring = Green;
+                        icon = Green;
+                        aura = Green;
+                        glow = 1;
+                        StatusText.Text = "Подключено";
+                        SubStatus.Text = "Трафик защищён · " + ActualServerTitle();
+                    }
+
                     break;
 
                 default:
-                    ring = Color.FromRgb(0x2A, 0x32, 0x42);
-                    icon = Color.FromRgb(0x56, 0x60, 0x7A);
+                    if (lastError != null)
+                    {
+                        ring = Color.FromRgb(0x4E, 0x24, 0x2C);
+                        icon = Red;
+                        aura = Red;
+                        StatusText.Text = "Ошибка";
+                        SubStatus.Text = Shorten(lastError, 200);
+                    }
+                    else
+                    {
+                        ring = RingGrey;
+                        icon = Grey;
+                        aura = Color.FromRgb(0x2A, 0x35, 0x50);
+                        StatusText.Text = "Отключено";
+                        SubStatus.Text = settings.Servers.Count > 0 ? "Нажми на кнопку, чтобы подключиться" : "Сначала добавь подписку — «Подписка» внизу";
+                    }
+
                     glow = 0;
-                    StatusText.Text = "Отключено";
-                    SubStatus.Text = settings.Servers.Count > 0 ? "Нажми на кнопку, чтобы подключиться" : "Сначала добавь подписку — раздел «Подписка» слева";
-                    SideStatus.Text = "Отключено";
-                    SideDot.Fill = (Brush)FindResource("Faint");
-                    SideDetail.Text = "";
-                    StopSpinner();
                     DownText.Text = "—";
                     UpText.Text = "—";
                     PingRun.Text = "—";
@@ -710,17 +1117,92 @@ namespace VPN
                     TotalRun.Text = "";
                     DownLine.Points = new PointCollection();
                     UpLine.Points = new PointCollection();
+                    IpChip.Visibility = Visibility.Collapsed;
                     break;
             }
 
             RingBrush.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(ring, TimeSpan.FromMilliseconds(ms)));
             IconBrush.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(icon, TimeSpan.FromMilliseconds(ms)));
+            AuraStop.BeginAnimation(GradientStop.ColorProperty,
+                new ColorAnimation(Color.FromArgb((byte)(next == State.Off && lastError == null ? 0x30 : 0x38), aura.R, aura.G, aura.B), TimeSpan.FromMilliseconds(ms * 2)));
+            GlowStop.Color = Color.FromArgb(0x55, aura.R, aura.G, aura.B);
             Glow.BeginAnimation(OpacityProperty, new DoubleAnimation(glow, TimeSpan.FromMilliseconds(ms * 2)));
 
-            if (trayToggle != null)
+            if (spin)
             {
-                trayToggle.Text = next == State.Off ? "Подключить" : "Отключить";
-                tray.Text = next == State.On ? "VPN — подключено" : "VPN — отключено";
+                SpinnerBrush.Color = spinColor;
+                StartSpinner();
+            }
+            else
+            {
+                StopSpinner();
+            }
+
+            UpdatePill();
+            UpdateTray();
+        }
+
+        /// <summary>Статус в «капсуле» сверху: цветная точка, слово и деталь (пинг).</summary>
+        private void UpdatePill()
+        {
+            string text;
+            string detail = "";
+            Brush dot;
+            bool pulse = false;
+
+            switch (state)
+            {
+                case State.Connecting:
+                    text = "Подключение";
+                    dot = (Brush)FindResource("Warn");
+                    pulse = true;
+                    break;
+                case State.Reconnecting:
+                    text = "Переподключение";
+                    dot = (Brush)FindResource("Warn");
+                    pulse = true;
+                    break;
+                case State.Switching:
+                    text = "Смена сервера";
+                    dot = (Brush)FindResource("Accent2");
+                    pulse = true;
+                    break;
+                case State.On when noResponseWarned:
+                    text = "Нет ответа";
+                    dot = (Brush)FindResource("Warn");
+                    pulse = true;
+                    break;
+                case State.On:
+                    text = "Подключено";
+                    detail = lastDelay.HasValue ? lastDelay + " мс" : "";
+                    dot = (Brush)FindResource("Accent");
+                    break;
+                default:
+                    text = lastError != null ? "Ошибка" : "Отключено";
+                    dot = (Brush)FindResource(lastError != null ? "Danger" : "Faint");
+                    break;
+            }
+
+            PillText.Text = text;
+            PillDetail.Text = detail;
+            PillDot.Fill = dot;
+            PillDotHalo.Fill = dot;
+
+            if (pulse)
+            {
+                var grow = new DoubleAnimation(1, 2.6, TimeSpan.FromMilliseconds(900)) { RepeatBehavior = RepeatBehavior.Forever };
+                var fade = new DoubleAnimation(0.7, 0, TimeSpan.FromMilliseconds(900)) { RepeatBehavior = RepeatBehavior.Forever };
+                PillHaloScale.BeginAnimation(ScaleTransform.ScaleXProperty, grow);
+                PillHaloScale.BeginAnimation(ScaleTransform.ScaleYProperty, grow);
+                PillDotHalo.BeginAnimation(OpacityProperty, fade);
+            }
+            else
+            {
+                // Бесконечные анимации обязательно снимаем, а не просто прячем.
+                PillHaloScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+                PillHaloScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+                PillDotHalo.BeginAnimation(OpacityProperty, null);
+                PillDotHalo.Opacity = 0;
             }
         }
 
@@ -739,72 +1221,169 @@ namespace VPN
             Spinner.Opacity = 0;
         }
 
-        // ================================================================== навигация
-
-        private void OnNav(object sender, RoutedEventArgs e)
-        {
-            if (PageHome == null)
-            {
-                return;
-            }
-
-            FrameworkElement show = NavServers.IsChecked == true ? PageServers
-                : NavTunnels.IsChecked == true ? PageTunnels
-                : NavSub.IsChecked == true ? PageSub
-                : NavSettings.IsChecked == true ? PageSettings
-                : PageHome;
-
-            foreach (FrameworkElement page in new FrameworkElement[] { PageHome, PageServers, PageTunnels, PageSub, PageSettings })
-            {
-                page.Visibility = page == show ? Visibility.Visible : Visibility.Collapsed;
-            }
-
-            Fade(show, 1, 160, from: 0);
-        }
-
-        private void OnOpenServers(object sender, RoutedEventArgs e) => NavServers.IsChecked = true;
-
         // ================================================================== серверы
 
-        private async void OnServerSelected(object sender, SelectionChangedEventArgs e)
+        private void OnOpenServers(object sender, RoutedEventArgs e) => OpenDrawer(DrawerPage.Servers);
+
+        private void OnServerSelected(object sender, SelectionChangedEventArgs e)
         {
             if (selectingServer || ServersList.SelectedItem is not ServerItem item || item.IsSelected)
             {
                 return;
             }
 
+            ChooseServer(item);
+        }
+
+        /// <summary>Выбор сервера из списка, трея или уведомления.</summary>
+        private async void ChooseServer(ServerItem item)
+        {
+            if (item == null)
+            {
+                return;
+            }
+
+            ServerItem previous = SelectedServerItem();
+
+            if (previous == item)
+            {
+                return;
+            }
+
+            MarkSelected(item);
+            settings.SelectedServer = item.Tag;
+            settings.Save();
+            autoChoice = "";
+
+            if (IsConnected && api != null)
+            {
+                await SwitchServerAsync(item, previous);
+            }
+            else
+            {
+                UpdateCurrentServerCard();
+                // Подключение/переподключение само выставит нужный сервер после старта движка.
+                ShowToast(state == State.Off ? "Выбран: " + item.Title : "Сервер: " + item.Title + " — применю после подключения", ToastKind.Info);
+            }
+        }
+
+        private void MarkSelected(ServerItem item)
+        {
+            selectingServer = true;
+
             foreach (ServerItem s in servers)
             {
                 s.IsSelected = s == item;
             }
 
-            settings.SelectedServer = item.Tag;
-            settings.Save();
-            autoChoice = "";
+            ServersList.SelectedItem = item;
+            selectingServer = false;
+        }
+
+        /// <summary>Смена сервера на лету — с явным статусом и подтверждением, что новый сервер отвечает.</summary>
+        private async Task SwitchServerAsync(ServerItem item, ServerItem previous)
+        {
+            int version = ++switchVersion;
+            CoreApi current = api;
+            SetState(State.Switching, "На " + item.Title);
             UpdateCurrentServerCard();
 
-            if (state == State.On && api != null)
+            bool ok = await current.SelectAsync(item.Tag);
+
+            if (version != switchVersion || current != api)
             {
-                bool ok = await api.SelectAsync(item.Tag);
-                ShowToast(ok ? "Сервер: " + item.Title : "Не получилось переключить сервер");
-                await MeasurePingAsync();
+                return;
             }
-            else
+
+            if (!ok)
             {
-                ShowToast("Выбран: " + item.Title);
+                if (previous != null)
+                {
+                    MarkSelected(previous);
+                    settings.SelectedServer = previous.Tag;
+                    settings.Save();
+                }
+
+                SetState(State.On);
+                UpdateCurrentServerCard();
+                ShowToast("Не получилось переключить сервер", ToastKind.Error);
+                SystemNotify("Сервер не переключился", "Остался " + (previous?.Title ?? "прежний"), System.Windows.Forms.ToolTipIcon.Warning);
+                return;
             }
+
+            int? delay = await current.DelayAsync("proxy");
+            string now = await current.CurrentAsync();
+
+            if (version != switchVersion || current != api)
+            {
+                return;
+            }
+
+            actualTag = now;
+            ServerProfile real = settings.Servers.FirstOrDefault(s => s.Tag == now);
+            autoChoice = item.Tag == "auto" && real != null ? Subscription.CleanName(real.Name) : "";
+            lastDelay = delay;
+            failStreak = delay.HasValue ? 0 : failStreak;
+            noResponseWarned = false;
+            SetState(State.On);
+            UpdateCurrentServerCard();
+
+            string title = item.Tag == "auto" ? "Авто" + (autoChoice.Length > 0 ? " → " + autoChoice : "") : item.Title;
+            Log.Write("Сервер переключён: " + title + (delay.HasValue ? " (" + delay + " мс)" : " (нет ответа)"));
+
+            if (delay.HasValue)
+            {
+                PingRun.Text = delay + " мс";
+                PingRun.Foreground = PingBrush(delay);
+                ShowToast("Сервер переключён: " + title + " · " + delay + " мс", ToastKind.Success);
+                SystemNotify("Сервер переключён", title + " · " + delay + " мс", System.Windows.Forms.ToolTipIcon.Info);
+            }
+            else if (previous != null && previous.Tag != item.Tag)
+            {
+                ShowToast(title + " не отвечает", ToastKind.Warning, "Вернуть", () => ChooseServer(previous));
+                SystemNotify("Сервер переключён, но не отвечает", title, System.Windows.Forms.ToolTipIcon.Warning);
+            }
+
+            _ = RefreshExitInfoAsync();
         }
 
-        private void OnServerSearch(object sender, TextChangedEventArgs e) => FilterServers();
-
-        private void FilterServers()
+        private void OnFavoriteToggle(object sender, RoutedEventArgs e)
         {
-            string q = ServerSearch.Text.Trim();
-            var view = System.Windows.Data.CollectionViewSource.GetDefaultView(servers);
-            view.Filter = q.Length == 0
-                ? null
-                : o => o is ServerItem s && (s.Tag == "auto" || s.Title.Contains(q, StringComparison.OrdinalIgnoreCase) || s.Code.Contains(q, StringComparison.OrdinalIgnoreCase));
+            if ((sender as FrameworkElement)?.DataContext is not ServerItem item || item.Tag == "auto")
+            {
+                return;
+            }
+
+            item.IsFavorite = !item.IsFavorite;
+            settings.Favorites.RemoveAll(n => n.Equals(item.Name, StringComparison.OrdinalIgnoreCase));
+
+            if (item.IsFavorite)
+            {
+                settings.Favorites.Add(item.Name);
+            }
+
+            settings.Save();
+            ApplyServerView();
         }
+
+        private void OnSortChanged(object sender, RoutedEventArgs e)
+        {
+            if (loading)
+            {
+                return;
+            }
+
+            settings.SortByPing = SortPing.IsChecked == true;
+            settings.Save();
+            ApplyServerView();
+
+            if (settings.SortByPing && servers.Where(s => s.Tag != "auto").All(s => s.Ping == int.MaxValue))
+            {
+                _ = PingAllAsync();
+            }
+        }
+
+        private void OnServerSearch(object sender, TextChangedEventArgs e) => ApplyServerView();
 
         private async void OnPingAll(object sender, RoutedEventArgs e) => await PingAllAsync();
 
@@ -818,7 +1397,7 @@ namespace VPN
             {
                 if (force)
                 {
-                    ShowToast("Сначала вставь ссылку в разделе «Подписка»");
+                    ShowToast("Сначала вставь ссылку в «Подписке»", ToastKind.Warning, "Открыть", () => OpenDrawer(DrawerPage.Sub));
                 }
 
                 return;
@@ -840,7 +1419,7 @@ namespace VPN
 
                 if (result.Servers.Count == 0)
                 {
-                    ShowToast("В подписке не нашлось серверов" + (result.Skipped > 0 ? " (непонятных ссылок: " + result.Skipped + ")" : ""));
+                    ShowToast("В подписке не нашлось серверов" + (result.Skipped > 0 ? " (непонятных ссылок: " + result.Skipped + ")" : ""), ToastKind.Warning);
                     return;
                 }
 
@@ -857,7 +1436,8 @@ namespace VPN
                 RebuildServers();
                 UpdateSubscriptionCard();
                 Log.Write("Подписка обновлена: серверов " + result.Servers.Count + (result.Skipped > 0 ? ", пропущено " + result.Skipped : ""));
-                ShowToast("Подписка обновлена: серверов " + result.Servers.Count);
+                ShowToast("Подписка обновлена: серверов " + result.Servers.Count, ToastKind.Success);
+                WarnIfExpiring();
 
                 if (state == State.On)
                 {
@@ -872,12 +1452,33 @@ namespace VPN
             catch (Exception ex)
             {
                 Log.Write("Подписка: " + ex.Message);
-                ShowToast("Не удалось загрузить подписку: " + ex.Message);
+                ShowToast("Не удалось загрузить подписку: " + ex.Message, ToastKind.Error);
             }
             finally
             {
                 RefreshButton.IsEnabled = true;
-                RefreshButton.Content = "Обновить подписку";
+                RefreshButton.Content = "Обновить";
+            }
+        }
+
+        /// <summary>Подписка скоро закончится или трафик на исходе — напоминаем.</summary>
+        private void WarnIfExpiring()
+        {
+            if (settings.ExpireUnix > 0)
+            {
+                int days = (int)Math.Ceiling((DateTimeOffset.FromUnixTimeSeconds(settings.ExpireUnix).LocalDateTime - DateTime.Now).TotalDays);
+
+                if (days <= 3)
+                {
+                    string text = days > 0 ? "Подписка закончится через " + days + " дн." : "Срок подписки истёк";
+                    SystemNotify("Подписка", text, System.Windows.Forms.ToolTipIcon.Warning);
+                    return;
+                }
+            }
+
+            if (settings.TrafficTotal > 0 && settings.TrafficUsed >= settings.TrafficTotal * 0.9)
+            {
+                SystemNotify("Подписка", "Осталось меньше 10% трафика", System.Windows.Forms.ToolTipIcon.Warning);
             }
         }
 
@@ -1015,7 +1616,7 @@ namespace VPN
                     }
 
                     ScheduleApply();
-                    ShowToast(preset.Name + " → через VPN");
+                    ShowToast(preset.Name + " → через VPN", ToastKind.Success);
                 };
                 Presets.Children.Add(button);
             }
@@ -1031,7 +1632,7 @@ namespace VPN
             PickerHint.Text = "Загружаю список…";
             PickerList.ItemsSource = null;
             candidates = await Task.Run(ListProcesses);
-            PickerHint.Text = DefaultForNewRule ? "будут идти через VPN" : "будут идти напрямую";
+            PickerHint.Text = DefaultForNewRule ? "пойдут через VPN" : "пойдут напрямую";
             FilterCandidates();
             PickerSearch.Focus();
         }
@@ -1064,7 +1665,7 @@ namespace VPN
 
             if (chosen.Count == 0)
             {
-                ShowToast("Отметь программы галочками");
+                ShowToast("Отметь программы галочками", ToastKind.Info);
                 return;
             }
 
@@ -1080,7 +1681,7 @@ namespace VPN
 
             PickerOverlay.Visibility = Visibility.Collapsed;
             ScheduleApply();
-            ShowToast("Добавлено программ: " + chosen.Count);
+            ShowToast("Добавлено программ: " + chosen.Count, ToastKind.Success);
         }
 
         private void OnPickerBrowse(object sender, RoutedEventArgs e)
@@ -1214,6 +1815,11 @@ namespace VPN
 
         private void OnSettingChanged(object sender, RoutedEventArgs e)
         {
+            if (loading)
+            {
+                return;
+            }
+
             bool autostart = AutostartCheck.IsChecked == true;
 
             if (autostart != settings.Autostart)
@@ -1224,6 +1830,22 @@ namespace VPN
             settings.Autostart = autostart;
             settings.StartMinimized = MinimizedCheck.IsChecked == true;
             settings.AutoConnect = AutoConnectCheck.IsChecked == true;
+            settings.AutoReconnect = ReconnectCheck.IsChecked == true;
+            settings.Notifications = NotifyCheck.IsChecked == true;
+
+            bool hotkey = HotkeyCheck.IsChecked == true;
+
+            if (hotkey != settings.Hotkey)
+            {
+                settings.Hotkey = hotkey;
+                ApplyHotkey();
+            }
+
+            if (TopmostCheck.IsChecked == true != settings.Topmost)
+            {
+                SetTopmost(TopmostCheck.IsChecked == true);
+            }
+
             settings.Save();
         }
 
@@ -1253,123 +1875,66 @@ namespace VPN
             try
             {
                 Clipboard.SetText(Log.All());
-                ShowToast("Журнал скопирован — вставь его в чат");
+                ShowToast("Журнал скопирован — вставь его в чат", ToastKind.Success);
             }
             catch
             {
-                ShowToast("Не удалось скопировать");
+                ShowToast("Не удалось скопировать", ToastKind.Error);
             }
         }
 
-        // ================================================================== окно и трей
+        // ================================================================== уведомление в окне
 
-        private void OnMinimize(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
-
-        private void OnMaximize(object sender, RoutedEventArgs e) =>
-            WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
-
-        private void OnClose(object sender, RoutedEventArgs e) => HideToTray();
-
-        private void HideToTray()
+        private enum ToastKind
         {
-            Hide();
-
-            if (!trayHintShown)
-            {
-                trayHintShown = true;
-                tray.ShowBalloonTip(3000, "VPN работает в трее", "Клик по значку — открыть окно. Выход — правой кнопкой по значку.", System.Windows.Forms.ToolTipIcon.Info);
-            }
+            Info,
+            Success,
+            Warning,
+            Error
         }
 
-        private void ShowFromTray()
+        /// <summary>Всплывашка внизу корпуса. Можно добавить кнопку действия («Вернуть», «На Авто»).</summary>
+        private void ShowToast(string text, ToastKind kind = ToastKind.Info, string actionText = null, Action action = null)
         {
-            Show();
-
-            if (WindowState == WindowState.Minimized)
+            ToastText.Text = text;
+            ToastDot.Fill = (Brush)FindResource(kind switch
             {
-                WindowState = WindowState.Normal;
-            }
+                ToastKind.Success => "Accent",
+                ToastKind.Warning => "Warn",
+                ToastKind.Error => "Danger",
+                _ => "Accent2"
+            });
 
-            Activate();
+            toastAction = action;
+            ToastAction.Visibility = action != null ? Visibility.Visible : Visibility.Collapsed;
+            ToastAction.Content = actionText ?? "";
+            Toast.IsHitTestVisible = action != null;
+
+            Fade(Toast, 1, 180);
+            ToastShift.BeginAnimation(TranslateTransform.YProperty,
+                new DoubleAnimation(10, 0, TimeSpan.FromMilliseconds(220)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
+
+            toastTimer.Stop();
+            toastTimer.Interval = TimeSpan.FromSeconds(action != null ? 6 : 3.2);
+            toastTimer.Start();
         }
 
-        private void CreateTray()
+        private void HideToast()
         {
-            tray = new System.Windows.Forms.NotifyIcon
-            {
-                Text = "VPN — отключено",
-                Visible = true,
-                Icon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath ?? "")
-            };
-
-            var menu = new System.Windows.Forms.ContextMenuStrip();
-            menu.Items.Add("Открыть", null, (_, _) => Dispatcher.BeginInvoke(new Action(ShowFromTray)));
-            trayToggle = new System.Windows.Forms.ToolStripMenuItem("Подключить", null, (_, _) => Dispatcher.BeginInvoke(new Action(async () =>
-            {
-                if (state == State.Off)
-                {
-                    await ConnectAsync();
-                }
-                else
-                {
-                    await DisconnectAsync();
-                }
-            })));
-            menu.Items.Add(trayToggle);
-            menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
-            menu.Items.Add("Выход", null, (_, _) => Dispatcher.BeginInvoke(new Action(async () => await ExitAsync())));
-            tray.ContextMenuStrip = menu;
-
-            // Один клик левой кнопкой — открыть окно.
-            tray.MouseClick += (_, args) =>
-            {
-                if (args.Button == System.Windows.Forms.MouseButtons.Left)
-                {
-                    Dispatcher.BeginInvoke(new Action(ShowFromTray));
-                }
-            };
+            toastTimer.Stop();
+            Toast.IsHitTestVisible = false;
+            toastAction = null;
+            Fade(Toast, 0, 250);
         }
 
-        private async Task ExitAsync()
+        private void OnToastAction(object sender, RoutedEventArgs e)
         {
-            reallyExit = true;
-            tick.Stop();
-
-            try
-            {
-                await DisconnectAsync().WaitAsync(TimeSpan.FromSeconds(6));
-            }
-            catch
-            {
-                // не дождались — всё равно выходим
-            }
-
-            tray.Visible = false;
-            tray.Dispose();
-            Application.Current.Shutdown();
-        }
-
-        protected override void OnClosing(CancelEventArgs e)
-        {
-            if (!reallyExit)
-            {
-                // Alt+F4 и крестик прячут в трей.
-                e.Cancel = true;
-                HideToTray();
-            }
-
-            base.OnClosing(e);
+            Action action = toastAction;
+            HideToast();
+            action?.Invoke();
         }
 
         // ================================================================== мелочи
-
-        private void ShowToast(string text)
-        {
-            ToastText.Text = text;
-            Fade(Toast, 1, 180);
-            toastTimer.Stop();
-            toastTimer.Start();
-        }
 
         private static void Fade(UIElement element, double to, int ms, double? from = null)
         {
@@ -1413,18 +1978,22 @@ namespace VPN
         private string pingText = "";
         private Brush pingBrush = Brushes.Gray;
         private bool isSelected;
+        private bool isFavorite;
         private string subtitle = "";
 
         public string Tag { get; set; }
+        public string Name { get; set; } = "";
         public string Code { get; set; }
         public string Title { get; set; }
         public string Host { get; set; }
         public int Port { get; set; }
+        public int Index { get; set; }
         public int Ping { get; set; } = int.MaxValue;
 
         public string Subtitle { get => subtitle; set => Set(ref subtitle, value); }
         public string PingText { get => pingText; set => Set(ref pingText, value); }
         public Brush PingBrush { get => pingBrush; set => Set(ref pingBrush, value); }
+        public bool IsFavorite { get => isFavorite; set => Set(ref isFavorite, value); }
 
         public bool IsSelected
         {
@@ -1437,6 +2006,49 @@ namespace VPN
         }
 
         public Visibility CheckVisibility => isSelected ? Visibility.Visible : Visibility.Hidden;
+
+        /// <summary>У «Авто» звёздочки нет.</summary>
+        public Visibility StarVisibility => Tag == "auto" ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    /// <summary>«Авто» → избранные → остальные; внутри групп — по пингу или как в подписке.</summary>
+    public sealed class ServerOrder : IComparer
+    {
+        private readonly bool byPing;
+
+        public ServerOrder(bool byPing)
+        {
+            this.byPing = byPing;
+        }
+
+        public int Compare(object x, object y)
+        {
+            if (x is not ServerItem a || y is not ServerItem b)
+            {
+                return 0;
+            }
+
+            int group = Group(a).CompareTo(Group(b));
+
+            if (group != 0)
+            {
+                return group;
+            }
+
+            if (byPing)
+            {
+                int ping = a.Ping.CompareTo(b.Ping);
+
+                if (ping != 0)
+                {
+                    return ping;
+                }
+            }
+
+            return a.Index.CompareTo(b.Index);
+        }
+
+        private static int Group(ServerItem s) => s.Tag == "auto" ? 0 : s.IsFavorite ? 1 : 2;
     }
 
     public sealed class RuleItem : Notify

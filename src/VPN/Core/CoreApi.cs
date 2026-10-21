@@ -160,6 +160,63 @@ namespace VPN.Core
 
         public void Dispose() => http.Dispose();
 
+        /// <summary>
+        /// Внешний IP и страна, какими их видят сайты, — запрос идёт через «зонд», то есть через VPN.
+        /// null — не удалось (сервер не отвечает или зонда нет).
+        /// </summary>
+        public static async Task<(string ip, string country)?> ExitInfoAsync(int probePort, string secret)
+        {
+            if (probePort <= 0)
+            {
+                return null;
+            }
+
+            var handler = new SocketsHttpHandler
+            {
+                Proxy = new System.Net.WebProxy("socks5://127.0.0.1:" + probePort)
+                {
+                    Credentials = new System.Net.NetworkCredential(ConfigBuilder.ProbeUser, secret)
+                },
+                UseProxy = true,
+                ConnectTimeout = TimeSpan.FromSeconds(6)
+            };
+
+            using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(8) };
+
+            foreach (string url in new[] { "https://cloudflare.com/cdn-cgi/trace", "https://1.1.1.1/cdn-cgi/trace" })
+            {
+                try
+                {
+                    string text = await client.GetStringAsync(url);
+                    string ip = "";
+                    string loc = "";
+
+                    foreach (string line in text.Split('\n'))
+                    {
+                        if (line.StartsWith("ip=", StringComparison.Ordinal))
+                        {
+                            ip = line.Substring(3).Trim();
+                        }
+                        else if (line.StartsWith("loc=", StringComparison.Ordinal))
+                        {
+                            loc = line.Substring(4).Trim();
+                        }
+                    }
+
+                    if (ip.Length > 0)
+                    {
+                        return (ip, loc);
+                    }
+                }
+                catch (Exception e)
+                {
+                    Log.Write("Проверка IP (" + url + "): " + e.Message);
+                }
+            }
+
+            return null;
+        }
+
         /// <summary>Пинг до сервера напрямую (TCP-рукопожатие), пока VPN выключен.</summary>
         public static async Task<int?> TcpPingAsync(string host, int port, int timeoutMs = 2500)
         {

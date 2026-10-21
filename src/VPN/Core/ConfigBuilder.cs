@@ -18,7 +18,11 @@ namespace VPN.Core
         public const string ApiAddress = "127.0.0.1:19090";
         public const string TestUrl = "https://www.gstatic.com/generate_204";
 
-        public static string Build(AppSettings s, string apiSecret)
+        /// <summary>Логин «зонда» — локального входа, через который программа сама ходит в интернет через VPN (узнать внешний IP).</summary>
+        public const string ProbeUser = "vpn";
+
+        /// <param name="probePort">Порт «зонда» на 127.0.0.1 (пароль — apiSecret). 0 — без зонда.</param>
+        public static string Build(AppSettings s, string apiSecret, int probePort = 0)
         {
             List<ServerProfile> servers = s.Servers;
             JsonArray outbounds = new JsonArray();
@@ -70,11 +74,24 @@ namespace VPN.Core
             JsonArray rules = new JsonArray
             {
                 new JsonObject { ["action"] = "sniff" },
-                new JsonObject { ["protocol"] = "dns", ["action"] = "hijack-dns" },
+                new JsonObject { ["protocol"] = "dns", ["action"] = "hijack-dns" }
+            };
+
+            // Зонд — раньше правила «VPN.exe напрямую»: запросы через него программа делает сама, но они должны идти через VPN.
+            if (probePort > 0)
+            {
+                rules.Add(new JsonObject { ["inbound"] = "probe-in", ["outbound"] = "proxy" });
+            }
+
+            foreach (JsonNode rule in new JsonNode[]
+            {
                 new JsonObject { ["ip_is_private"] = true, ["outbound"] = "direct" },
                 // Сам движок и наша программа (обновление подписки) — всегда напрямую.
                 new JsonObject { ["process_name"] = Arr("sing-box.exe", "VPN.exe"), ["outbound"] = "direct" }
-            };
+            })
+            {
+                rules.Add(rule);
+            }
 
             JsonArray ruleSets = new JsonArray();
 
@@ -159,6 +176,33 @@ namespace VPN.Core
                 }
             }
 
+            JsonArray inbounds = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["type"] = "tun",
+                    ["tag"] = "tun-in",
+                    ["interface_name"] = "ShxdowrateVPN",
+                    ["address"] = Arr("172.19.0.1/30"),
+                    ["mtu"] = 9000,
+                    ["auto_route"] = true,
+                    ["strict_route"] = true,
+                    ["stack"] = "mixed"
+                }
+            };
+
+            if (probePort > 0)
+            {
+                inbounds.Add(new JsonObject
+                {
+                    ["type"] = "socks",
+                    ["tag"] = "probe-in",
+                    ["listen"] = "127.0.0.1",
+                    ["listen_port"] = probePort,
+                    ["users"] = new JsonArray { new JsonObject { ["username"] = ProbeUser, ["password"] = apiSecret } }
+                });
+            }
+
             JsonObject config = new JsonObject
             {
                 ["log"] = new JsonObject { ["level"] = "warn", ["timestamp"] = true },
@@ -173,20 +217,7 @@ namespace VPN.Core
                     ["final"] = s.DefaultViaVpn ? "remote" : "local",
                     ["strategy"] = "ipv4_only"
                 },
-                ["inbounds"] = new JsonArray
-                {
-                    new JsonObject
-                    {
-                        ["type"] = "tun",
-                        ["tag"] = "tun-in",
-                        ["interface_name"] = "ShxdowrateVPN",
-                        ["address"] = Arr("172.19.0.1/30"),
-                        ["mtu"] = 9000,
-                        ["auto_route"] = true,
-                        ["strict_route"] = true,
-                        ["stack"] = "mixed"
-                    }
-                },
+                ["inbounds"] = inbounds,
                 ["outbounds"] = outbounds,
                 ["route"] = new JsonObject
                 {
