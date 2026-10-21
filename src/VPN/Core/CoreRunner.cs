@@ -74,7 +74,7 @@ namespace VPN.Core
 
             if (settings.Servers.Count == 0)
             {
-                return "Нет серверов. Добавь подписку в меню слева.";
+                return "Нет серверов. Добавь подписку: «Подписка» в доке внизу.";
             }
 
             ApiSecret = Guid.NewGuid().ToString("N");

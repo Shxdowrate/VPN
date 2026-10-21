@@ -214,7 +214,7 @@ namespace VPN
                 return;
             }
 
-            for (DependencyObject d = e.OriginalSource as DependencyObject; d != null; d = Parent(d))
+            for (DependencyObject d = e.OriginalSource as DependencyObject; d != null; d = TreeParent(d))
             {
                 if (d == PowerButton || d is ButtonBase || d is TextBoxBase || d is ScrollBar || d is Thumb || d is ListBoxItem)
                 {
@@ -237,7 +237,7 @@ namespace VPN
             }
         }
 
-        private static DependencyObject Parent(DependencyObject d) =>
+        private static DependencyObject TreeParent(DependencyObject d) =>
             d is Visual || d is System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(d) : LogicalTreeHelper.GetParent(d);
 
         // ================================================================== выдвижная панель
