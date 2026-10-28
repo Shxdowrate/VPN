@@ -9,7 +9,8 @@ namespace VPN.Core
     /// <summary>
     /// Собирает конфиг sing-box 1.14. Весь трафик идёт через виртуальный адаптер (TUN),
     /// а правила решают, что пустить через VPN, а что напрямую:
-    /// 1) правила пользователя (программы и сайты) — в приоритете;
+    /// 0) блокировка (реклама и то, что пользователь пометил «блок»);
+    /// 1) правила активного профиля (сайты, IP, наборы geosite/geoip, программы) — в приоритете;
     /// 2) «российские сайты напрямую» (наборы geoip-ru / geosite-category-ru и зоны .ru/.su/.рф);
     /// 3) всё остальное — как выбрано в «Остальной трафик».
     /// </summary>
@@ -66,10 +67,20 @@ namespace VPN.Core
             outbounds.Add(new JsonObject { ["type"] = "direct", ["tag"] = "direct" });
 
             // --- Правила ---
-            List<string> appsVpn = Values(s, RuleKind.App, true);
-            List<string> appsDirect = Values(s, RuleKind.App, false);
-            List<string> sitesVpn = Values(s, RuleKind.Site, true);
-            List<string> sitesDirect = Values(s, RuleKind.Site, false);
+            List<string> appsVpn = Values(s, RuleKind.App, Action.Vpn);
+            List<string> appsDirect = Values(s, RuleKind.App, Action.Direct);
+            List<string> appsBlock = Values(s, RuleKind.App, Action.Block);
+            List<string> sitesVpn = Values(s, RuleKind.Site, Action.Vpn);
+            List<string> sitesDirect = Values(s, RuleKind.Site, Action.Direct);
+            List<string> sitesBlock = Values(s, RuleKind.Site, Action.Block);
+            List<string> ipVpn = Values(s, RuleKind.Ip, Action.Vpn);
+            List<string> ipDirect = Values(s, RuleKind.Ip, Action.Direct);
+            List<string> ipBlock = Values(s, RuleKind.Ip, Action.Block);
+
+            // Наборы (geosite-youtube…) — только те, что есть на диске: без файла движок не запустится.
+            List<string> setsVpn = Values(s, RuleKind.RuleSet, Action.Vpn).Where(RuleSets.Exists).ToList();
+            List<string> setsDirect = Values(s, RuleKind.RuleSet, Action.Direct).Where(RuleSets.Exists).ToList();
+            List<string> setsBlock = Values(s, RuleKind.RuleSet, Action.Block).Where(RuleSets.Exists).ToList();
 
             JsonArray rules = new JsonArray
             {
@@ -94,33 +105,42 @@ namespace VPN.Core
             }
 
             JsonArray ruleSets = new JsonArray();
+            var declared = new HashSet<string>();
 
-            if (s.BlockAds && RuleSetExists("geosite-category-ads-all"))
+            void Declare(string tag)
             {
-                ruleSets.Add(LocalRuleSet("geosite-category-ads-all"));
+                if (declared.Add(tag))
+                {
+                    ruleSets.Add(LocalRuleSet(tag));
+                }
+            }
+
+            foreach (string tag in setsVpn.Concat(setsDirect).Concat(setsBlock))
+            {
+                Declare(tag);
+            }
+
+            // Блокировка — раньше всего остального.
+            if (s.BlockAds && RuleSets.Exists("geosite-category-ads-all"))
+            {
+                Declare("geosite-category-ads-all");
                 rules.Add(new JsonObject { ["rule_set"] = "geosite-category-ads-all", ["action"] = "reject" });
             }
 
+            AddRule(rules, "domain_suffix", sitesBlock, null);
+            AddRule(rules, "ip_cidr", ipBlock, null);
+            AddRule(rules, "rule_set", setsBlock, null);
+            AddRule(rules, "process_name", appsBlock, null);
+
             // Сайты точнее программ: «youtube через VPN» сработает и внутри браузера, пущенного напрямую.
-            if (sitesDirect.Count > 0)
-            {
-                rules.Add(new JsonObject { ["domain_suffix"] = Arr(sitesDirect), ["outbound"] = "direct" });
-            }
-
-            if (sitesVpn.Count > 0)
-            {
-                rules.Add(new JsonObject { ["domain_suffix"] = Arr(sitesVpn), ["outbound"] = "proxy" });
-            }
-
-            if (appsDirect.Count > 0)
-            {
-                rules.Add(new JsonObject { ["process_name"] = Arr(appsDirect), ["outbound"] = "direct" });
-            }
-
-            if (appsVpn.Count > 0)
-            {
-                rules.Add(new JsonObject { ["process_name"] = Arr(appsVpn), ["outbound"] = "proxy" });
-            }
+            AddRule(rules, "domain_suffix", sitesDirect, "direct");
+            AddRule(rules, "domain_suffix", sitesVpn, "proxy");
+            AddRule(rules, "ip_cidr", ipDirect, "direct");
+            AddRule(rules, "ip_cidr", ipVpn, "proxy");
+            AddRule(rules, "rule_set", setsDirect, "direct");
+            AddRule(rules, "rule_set", setsVpn, "proxy");
+            AddRule(rules, "process_name", appsDirect, "direct");
+            AddRule(rules, "process_name", appsVpn, "proxy");
 
             JsonArray russiaSets = new JsonArray();
 
@@ -128,9 +148,9 @@ namespace VPN.Core
             {
                 foreach (string tag in new[] { "geoip-ru", "geosite-category-ru" })
                 {
-                    if (RuleSetExists(tag))
+                    if (RuleSets.Exists(tag))
                     {
-                        ruleSets.Add(LocalRuleSet(tag));
+                        Declare(tag);
                         russiaSets.Add(tag);
                     }
                 }
@@ -145,32 +165,19 @@ namespace VPN.Core
 
             // --- DNS: адреса сайтов, идущих напрямую, узнаём у российского DNS, остальные — через VPN ---
             JsonArray dnsRules = new JsonArray();
-
-            if (sitesDirect.Count > 0)
-            {
-                dnsRules.Add(new JsonObject { ["domain_suffix"] = Arr(sitesDirect), ["server"] = "local" });
-            }
-
-            if (sitesVpn.Count > 0)
-            {
-                dnsRules.Add(new JsonObject { ["domain_suffix"] = Arr(sitesVpn), ["server"] = "remote" });
-            }
-
-            if (appsDirect.Count > 0)
-            {
-                dnsRules.Add(new JsonObject { ["process_name"] = Arr(appsDirect), ["server"] = "local" });
-            }
-
-            if (appsVpn.Count > 0)
-            {
-                dnsRules.Add(new JsonObject { ["process_name"] = Arr(appsVpn), ["server"] = "remote" });
-            }
+            AddDnsRule(dnsRules, "domain_suffix", sitesDirect, "local");
+            AddDnsRule(dnsRules, "domain_suffix", sitesVpn, "remote");
+            // В DNS-правилах можно только наборы доменов (geosite), не адресов.
+            AddDnsRule(dnsRules, "rule_set", setsDirect.Where(t => !RuleSets.IsIpSet(t)).ToList(), "local");
+            AddDnsRule(dnsRules, "rule_set", setsVpn.Where(t => !RuleSets.IsIpSet(t)).ToList(), "remote");
+            AddDnsRule(dnsRules, "process_name", appsDirect, "local");
+            AddDnsRule(dnsRules, "process_name", appsVpn, "remote");
 
             if (s.RussiaDirect)
             {
                 dnsRules.Add(new JsonObject { ["domain_suffix"] = Arr("ru", "su", "xn--p1ai", "xn--d1acj3b"), ["server"] = "local" });
 
-                if (RuleSetExists("geosite-category-ru"))
+                if (RuleSets.Exists("geosite-category-ru"))
                 {
                     dnsRules.Add(new JsonObject { ["rule_set"] = "geosite-category-ru", ["server"] = "local" });
                 }
@@ -250,11 +257,57 @@ namespace VPN.Core
             });
         }
 
-        private static List<string> Values(AppSettings s, RuleKind kind, bool viaVpn) =>
-            s.Rules.Where(r => r.Kind == kind && r.ViaVpn == viaVpn && !string.IsNullOrWhiteSpace(r.Value))
-                .Select(r => kind == RuleKind.Site ? NormalizeDomain(r.Value) : r.Value.Trim())
+        private enum Action
+        {
+            Vpn,
+            Direct,
+            Block
+        }
+
+        private static Action ActionOf(RouteRule r) => r.Block ? Action.Block : r.ViaVpn ? Action.Vpn : Action.Direct;
+
+        private static List<string> Values(AppSettings s, RuleKind kind, Action action) =>
+            s.Rules.Where(r => r.Kind == kind && ActionOf(r) == action && !string.IsNullOrWhiteSpace(r.Value))
+                .Select(r => kind switch
+                {
+                    RuleKind.Site => NormalizeDomain(r.Value),
+                    RuleKind.Ip => LinkImport.NormalizeIp(r.Value) ?? "",
+                    RuleKind.RuleSet => r.Value.Trim().ToLowerInvariant(),
+                    _ => r.Value.Trim()
+                })
+                .Where(v => v.Length > 0)
                 .Distinct()
                 .ToList();
+
+        /// <summary>Правило маршрута; outbound null — заблокировать.</summary>
+        private static void AddRule(JsonArray rules, string field, List<string> values, string outbound)
+        {
+            if (values.Count == 0)
+            {
+                return;
+            }
+
+            JsonObject rule = new JsonObject { [field] = Arr(values) };
+
+            if (outbound == null)
+            {
+                rule["action"] = "reject";
+            }
+            else
+            {
+                rule["outbound"] = outbound;
+            }
+
+            rules.Add(rule);
+        }
+
+        private static void AddDnsRule(JsonArray rules, string field, List<string> values, string server)
+        {
+            if (values.Count > 0)
+            {
+                rules.Add(new JsonObject { [field] = Arr(values), ["server"] = server });
+            }
+        }
 
         /// <summary>«https://www.YouTube.com/watch» → «youtube.com».</summary>
         public static string NormalizeDomain(string input)
@@ -279,23 +332,34 @@ namespace VPN.Core
                 d = d.Substring(4);
             }
 
-            return d.Trim('.');
+            d = d.Trim('.');
+
+            // «пример.рф» → «xn--e1afmkfd.xn--p1ai»: движок понимает только такую запись.
+            if (d.Any(c => c > 127))
+            {
+                try
+                {
+                    d = new System.Globalization.IdnMapping().GetAscii(d);
+                }
+                catch (System.ArgumentException)
+                {
+                    // не домен — оставим как есть, проверка отсеет
+                }
+            }
+
+            return d;
         }
 
         private static JsonArray Arr(params string[] values) => new JsonArray(values.Select(v => (JsonNode)v).ToArray());
 
         private static JsonArray Arr(List<string> values) => Arr(values.ToArray());
 
-        private static string RuleSetPath(string tag) => Path.Combine(Paths.RuleSets, tag + ".srs");
-
-        private static bool RuleSetExists(string tag) => File.Exists(RuleSetPath(tag));
-
         private static JsonObject LocalRuleSet(string tag) => new JsonObject
         {
             ["type"] = "local",
             ["tag"] = tag,
             ["format"] = "binary",
-            ["path"] = RuleSetPath(tag)
+            ["path"] = RuleSets.PathFor(tag)
         };
     }
 }
