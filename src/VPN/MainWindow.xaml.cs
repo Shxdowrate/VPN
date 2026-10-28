@@ -14,15 +14,19 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
-using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
-using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using VPN.Core;
 
 namespace VPN
 {
+    /// <summary>
+    /// Главное окно. Код разложен по файлам:
+    /// здесь — подключение, статусы, статистика и список серверов;
+    /// MainWindow.Shell.cs — окно, форма, свечение, навигация, трей, горячая клавиша, внешние ссылки;
+    /// MainWindow.Subs.cs — подписки и импорт; MainWindow.Tunnels.cs — правила и профили маршрутизации.
+    /// </summary>
     public partial class MainWindow : Window
     {
         /// <summary>Что сейчас происходит с туннелем.</summary>
@@ -35,19 +39,6 @@ namespace VPN
             Reconnecting
         }
 
-        /// <summary>Готовые наборы сайтов, которые обычно нужны через VPN.</summary>
-        private static readonly (string Name, string[] Domains)[] PresetSites =
-        {
-            ("YouTube", new[] { "youtube.com", "googlevideo.com", "ytimg.com", "youtu.be", "ggpht.com" }),
-            ("Discord", new[] { "discord.com", "discord.gg", "discordapp.com", "discordapp.net", "discord.media" }),
-            ("Instagram", new[] { "instagram.com", "cdninstagram.com", "fbcdn.net" }),
-            ("Facebook", new[] { "facebook.com", "fbcdn.net", "messenger.com" }),
-            ("X / Twitter", new[] { "x.com", "twitter.com", "twimg.com", "t.co" }),
-            ("ChatGPT", new[] { "chatgpt.com", "openai.com", "oaistatic.com", "oaiusercontent.com" }),
-            ("Telegram", new[] { "telegram.org", "t.me", "telegram.me" }),
-            ("Spotify", new[] { "spotify.com", "scdn.co", "spotifycdn.com" })
-        };
-
         /// <summary>Паузы между попытками переподключения.</summary>
         private static readonly int[] ReconnectDelays = { 1, 3, 5, 10, 20 };
 
@@ -55,8 +46,6 @@ namespace VPN
         private readonly CoreRunner runner = new CoreRunner();
         private readonly SemaphoreSlim engineGate = new SemaphoreSlim(1, 1);
         private readonly ObservableCollection<ServerItem> servers = new ObservableCollection<ServerItem>();
-        private readonly ObservableCollection<RuleItem> apps = new ObservableCollection<RuleItem>();
-        private readonly ObservableCollection<RuleItem> sites = new ObservableCollection<RuleItem>();
         private readonly DispatcherTimer tick = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         private readonly DispatcherTimer applyDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
         private readonly DispatcherTimer subTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(30) };
@@ -75,7 +64,6 @@ namespace VPN
         private bool busy;
         private bool started;
         private bool selectingServer;
-        private List<Candidate> candidates = new List<Candidate>();
 
         /// <summary>Последняя ошибка подключения — показываем её, пока не нажмут кнопку снова.</summary>
         private string lastError;
@@ -89,15 +77,18 @@ namespace VPN
         private int switchVersion;
         private string exitIp = "";
         private Action toastAction;
+        private volatile bool logVisible;
 
-        public MainWindow(bool startMinimized)
+        /// <summary>Ссылка, переданная при запуске (happ://…), — обработаем, когда окно поднимется.</summary>
+        private string pendingLink;
+
+        public MainWindow(bool startMinimized, string link = null)
         {
             InitializeComponent();
             settings = AppSettings.Load();
+            pendingLink = link;
 
             ServersList.ItemsSource = servers;
-            AppsList.ItemsSource = apps;
-            SitesList.ItemsSource = sites;
 
             tick.Tick += OnTick;
             applyDebounce.Tick += async (_, _) =>
@@ -105,7 +96,7 @@ namespace VPN
                 applyDebounce.Stop();
                 await ApplyChangesAsync();
             };
-            subTimer.Tick += async (_, _) => await MaybeRefreshSubscriptionAsync(false);
+            subTimer.Tick += async (_, _) => await RefreshDueSubscriptionsAsync();
             toastTimer.Tick += (_, _) => HideToast();
 
             runner.Crashed += tail => Dispatcher.BeginInvoke(new Action(async () => await OnEngineCrashedAsync(tail)));
@@ -124,10 +115,12 @@ namespace VPN
             };
 
             InitShell();
-            BuildPresets();
+            InitTunnels();
+            InitSubs();
             LoadIntoUi();
             CreateTray();
             SetState(State.Off, animate: false);
+            OpenPage(Page.Servers);
             loading = false;
 
             Loaded += async (_, _) => await OnStartedAsync();
@@ -140,8 +133,6 @@ namespace VPN
             subTimer.Start();
         }
 
-        private volatile bool logVisible;
-
         private async Task OnStartedAsync()
         {
             if (started)
@@ -150,9 +141,18 @@ namespace VPN
             }
 
             started = true;
-            await MaybeRefreshSubscriptionAsync(false);
+            RegisterLinkSchemes(force: false);
 
-            if (settings.AutoConnect && settings.Servers.Count > 0)
+            if (pendingLink != null)
+            {
+                string link = pendingLink;
+                pendingLink = null;
+                await HandleExternalAsync(link);
+            }
+
+            await RefreshDueSubscriptionsAsync();
+
+            if (settings.AutoConnect && settings.Servers.Count > 0 && state == State.Off)
             {
                 await ConnectAsync();
             }
@@ -166,24 +166,6 @@ namespace VPN
 
         private void LoadIntoUi()
         {
-            ModeAll.IsChecked = settings.DefaultViaVpn;
-            ModeSelected.IsChecked = !settings.DefaultViaVpn;
-            RussiaCheck.IsChecked = settings.RussiaDirect;
-            AdsCheck.IsChecked = settings.BlockAds;
-
-            foreach (RouteRule rule in settings.Rules)
-            {
-                (rule.Kind == RuleKind.App ? apps : sites).Add(new RuleItem(rule));
-            }
-
-            UpdateRuleEmpties();
-            LoadRuleIconsAsync();
-
-            SubUrl.Text = settings.SubscriptionUrl;
-            Upd6.IsChecked = settings.SubscriptionUpdateHours == 6;
-            Upd12.IsChecked = settings.SubscriptionUpdateHours == 12;
-            Upd24.IsChecked = settings.SubscriptionUpdateHours == 24;
-
             AutostartCheck.IsChecked = settings.Autostart;
             MinimizedCheck.IsChecked = settings.StartMinimized;
             AutoConnectCheck.IsChecked = settings.AutoConnect;
@@ -191,6 +173,8 @@ namespace VPN
             NotifyCheck.IsChecked = settings.Notifications;
             HotkeyCheck.IsChecked = settings.Hotkey;
             TopmostCheck.IsChecked = settings.Topmost;
+            HappLinksCheck.IsChecked = settings.HandleHappLinks;
+            ClipboardCheck.IsChecked = settings.WatchClipboard;
             SortPing.IsChecked = settings.SortByPing;
             SortList.IsChecked = !settings.SortByPing;
 
@@ -199,25 +183,20 @@ namespace VPN
                              "Работает через виртуальный сетевой адаптер, поэтому просит права администратора.\n" +
                              "Закрытие окна прячет программу в трей; выход — через меню значка в трее.";
 
+            LoadProfileIntoUi();
             RebuildServers();
-            UpdateSubscriptionCard();
+            RebuildSubs();
         }
 
-        private async void LoadRuleIconsAsync()
-        {
-            foreach (RuleItem item in apps.ToList())
-            {
-                string path = item.Rule.Path;
-                item.Icon = await Task.Run(() => IconFor(path));
-            }
-        }
-
+        /// <summary>Пересобрать список серверов из подписок: группы по подпискам, избранное — отдельной группой сверху.</summary>
         private void RebuildServers()
         {
             selectingServer = true;
             string current = settings.SelectedServer;
             var favorites = new HashSet<string>(settings.Favorites, StringComparer.OrdinalIgnoreCase);
+            var oldPings = servers.Where(s => s.Ping != int.MaxValue).ToDictionary(s => s.Tag, s => s);
             servers.Clear();
+
             servers.Add(new ServerItem
             {
                 Tag = "auto",
@@ -225,37 +204,68 @@ namespace VPN
                 Title = "Самый быстрый",
                 Subtitle = "выбирается автоматически",
                 Index = -1,
+                GroupKey = "Автовыбор",
+                GroupOrder = 0,
                 IsSelected = current == "auto" || settings.Servers.All(s => s.Tag != current)
             });
 
             int index = 0;
+            var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Автовыбор", "Избранное" };
 
-            foreach (ServerProfile s in settings.Servers)
+            for (int g = 0; g < settings.Subscriptions.Count; g++)
             {
-                string code = Subscription.CountryCode(s.Name);
-                servers.Add(new ServerItem
+                SubscriptionEntry sub = settings.Subscriptions[g];
+                string groupName = sub.DisplayName;
+
+                // Две подписки с одинаковым названием не должны слиться в одну группу.
+                for (int n = 2; !usedNames.Add(groupName); n++)
                 {
-                    Tag = s.Tag,
-                    Name = s.Name,
-                    Code = code.Length > 0 ? code : "··",
-                    Title = Subscription.CleanName(s.Name),
-                    Subtitle = s.Protocol + " · " + s.Host,
-                    Host = s.Host,
-                    Port = s.Port,
-                    Index = index++,
-                    IsFavorite = favorites.Contains(s.Name),
-                    IsSelected = s.Tag == current
-                });
+                    groupName = sub.DisplayName + " (" + n + ")";
+                }
+
+                foreach (ServerProfile s in sub.Servers)
+                {
+                    string code = Subscription.CountryCode(s.Name);
+                    bool favorite = favorites.Contains(s.Name);
+                    var item = new ServerItem
+                    {
+                        Tag = s.Tag,
+                        Name = s.Name,
+                        Code = code.Length > 0 ? code : "··",
+                        Title = Subscription.CleanName(s.Name),
+                        Subtitle = s.Host + ":" + s.Port + (favorite ? "  ·  " + sub.DisplayName : ""),
+                        Host = s.Host,
+                        Port = s.Port,
+                        Protocol = s.Protocol,
+                        Index = index++,
+                        SubGroupKey = groupName,
+                        SubGroupOrder = 2 + g,
+                        IsFavorite = favorite,
+                        IsSelected = s.Tag == current
+                    };
+                    item.UpdateGroup();
+
+                    if (oldPings.TryGetValue(s.Tag, out ServerItem old) && old.Host == s.Host)
+                    {
+                        item.Ping = old.Ping;
+                        item.PingText = old.PingText;
+                        item.PingBrush = old.PingBrush;
+                    }
+
+                    servers.Add(item);
+                }
             }
 
             ServersList.SelectedItem = servers.FirstOrDefault(s => s.IsSelected);
             selectingServer = false;
-            ServerCount.Text = settings.Servers.Count > 0 ? settings.Servers.Count + " серверов" : "добавь подписку";
+            ServersEmpty.Visibility = settings.Servers.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            ServersList.Visibility = settings.Servers.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            UpdatePageHint();
             ApplyServerView();
             UpdateCurrentServerCard();
         }
 
-        /// <summary>Порядок: «Авто», избранные, остальные; внутри — как в подписке или по пингу.</summary>
+        /// <summary>Порядок: «Авто», избранные, подписки по очереди; внутри — как в подписке или по пингу.</summary>
         private void ApplyServerView()
         {
             if (CollectionViewSource.GetDefaultView(servers) is not ListCollectionView view)
@@ -267,11 +277,19 @@ namespace VPN
 
             using (view.DeferRefresh())
             {
+                if (view.GroupDescriptions.Count == 0)
+                {
+                    view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(ServerItem.GroupKey)));
+                }
+
                 view.CustomSort = new ServerOrder(settings.SortByPing);
                 view.Filter = q.Length == 0
                     ? null
-                    : o => o is ServerItem s && (s.Tag == "auto" || s.Title.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-                                                 s.Code.Contains(q, StringComparison.OrdinalIgnoreCase));
+                    : o => o is ServerItem s && (s.Tag == "auto" ||
+                                                 s.Title.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                                                 s.Code.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                                                 s.Proto.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                                                 s.SubGroupKey.Contains(q, StringComparison.OrdinalIgnoreCase));
             }
         }
 
@@ -284,8 +302,10 @@ namespace VPN
                 return;
             }
 
-            CurrentCode.Text = selected.Tag == "auto" && ActualServer() is ServerItem real ? real.Code : selected.Code;
+            ServerItem real = selected.Tag == "auto" ? ActualServer() : selected;
+            CurrentCode.Text = real?.Code ?? selected.Code;
             CurrentServer.Text = selected.Tag == "auto" && !string.IsNullOrEmpty(autoChoice) ? "Авто → " + autoChoice : selected.Title;
+            CurrentGroup.Text = selected.Tag == "auto" ? "Сервер · автовыбор" : "Сервер · " + selected.SubGroupKey;
 
             if (IsConnected && lastDelay.HasValue)
             {
@@ -318,54 +338,12 @@ namespace VPN
 
         private bool IsConnected => state == State.On || state == State.Switching;
 
-        private void UpdateSubscriptionCard()
-        {
-            SubTitleText.Text = string.IsNullOrWhiteSpace(settings.SubscriptionTitle) ? "Подписка" : settings.SubscriptionTitle;
-
-            if (string.IsNullOrWhiteSpace(settings.SubscriptionUrl))
-            {
-                SubTrafficText.Text = "Ссылка не добавлена";
-                SubExpireText.Text = "";
-                SubBar.Width = 0;
-                SubInfo.Text = "";
-                return;
-            }
-
-            double barWidth = SubBarTrack.ActualWidth > 0 ? SubBarTrack.ActualWidth : 340;
-
-            if (settings.TrafficTotal > 0)
-            {
-                SubTrafficText.Text = "Использовано " + Format.Size(settings.TrafficUsed) + " из " + Format.Size(settings.TrafficTotal);
-                AnimateWidth(SubBar, barWidth * Math.Clamp((double)settings.TrafficUsed / settings.TrafficTotal, 0, 1));
-            }
-            else
-            {
-                SubTrafficText.Text = "Использовано " + Format.Size(settings.TrafficUsed) + " · без лимита";
-                SubBar.Width = 0;
-            }
-
-            if (settings.ExpireUnix > 0)
-            {
-                DateTime expire = DateTimeOffset.FromUnixTimeSeconds(settings.ExpireUnix).LocalDateTime;
-                int days = (int)Math.Ceiling((expire - DateTime.Now).TotalDays);
-                SubExpireText.Text = days > 0 ? "до " + expire.ToString("dd.MM.yyyy") + " · " + days + " дн." : "срок истёк";
-                SubExpireText.Foreground = (Brush)FindResource(days <= 0 ? "Danger" : days <= 3 ? "Warn" : "SubText");
-            }
-            else
-            {
-                SubExpireText.Text = "";
-            }
-
-            SubInfo.Text = "Серверов: " + settings.Servers.Count +
-                           (settings.LastSubscriptionUpdate > DateTime.MinValue ? "   ·   обновлено " + settings.LastSubscriptionUpdate.ToString("dd.MM HH:mm") : "");
-        }
-
         // ================================================================== подключение
 
         private async void OnPowerClick(object sender, MouseButtonEventArgs e)
         {
             // Короткий «нажим» кнопки.
-            var press = new DoubleAnimation(0.94, 1, TimeSpan.FromMilliseconds(220)) { EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.6 } };
+            var press = new DoubleAnimation(0.93, 1, TimeSpan.FromMilliseconds(260)) { EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.6 } };
             PowerScale.BeginAnimation(ScaleTransform.ScaleXProperty, press);
             PowerScale.BeginAnimation(ScaleTransform.ScaleYProperty, press);
             await ToggleAsync();
@@ -411,9 +389,10 @@ namespace VPN
             {
                 if (settings.Servers.Count == 0)
                 {
-                    await MaybeRefreshSubscriptionAsync(true);
+                    await RefreshAllSubscriptionsAsync(true);
                 }
 
+                await EnsureRuleSetsAsync(quiet: true);
                 string error = await StartEngineAsync();
 
                 if (error != null)
@@ -646,8 +625,8 @@ namespace VPN
             SystemNotify("VPN отключён", "Не удалось переподключиться", System.Windows.Forms.ToolTipIcon.Error);
         }
 
-        /// <summary>Правила поменялись: если подключены — тихо перезапускаем движок.</summary>
-        private async Task ApplyChangesAsync()
+        /// <summary>Правила или серверы поменялись: если подключены — тихо перезапускаем движок.</summary>
+        private async Task ApplyChangesAsync(string doneText = "Правила применены")
         {
             settings.Save();
 
@@ -673,25 +652,12 @@ namespace VPN
                 }
 
                 await OnEngineUpAsync(resetSession: false);
-                ShowToast("Правила применены", ToastKind.Success);
+                ShowToast(doneText, ToastKind.Success);
             }
             finally
             {
                 busy = false;
             }
-        }
-
-        private void ScheduleApply()
-        {
-            if (loading)
-            {
-                return;
-            }
-
-            settings.Rules = apps.Concat(sites).Select(r => r.Rule).ToList();
-            settings.Save();
-            applyDebounce.Stop();
-            applyDebounce.Start();
         }
 
         // ================================================================== статистика
@@ -801,6 +767,8 @@ namespace VPN
             TrackHealth(delay);
             UpdatePill();
             UpdateTray();
+            // Свечение подстраивается под качество связи.
+            ApplyLook(animate: true);
         }
 
         /// <summary>Следим, через какой сервер реально идёт трафик, и сообщаем, если он сменился сам.</summary>
@@ -929,15 +897,7 @@ namespace VPN
                 return;
             }
 
-            try
-            {
-                Clipboard.SetText(exitIp);
-                ShowToast("IP скопирован", ToastKind.Success);
-            }
-            catch
-            {
-                ShowToast("Не удалось скопировать", ToastKind.Error);
-            }
+            CopyText(exitIp, "IP скопирован");
         }
 
         private async Task PingAllAsync()
@@ -1022,6 +982,7 @@ namespace VPN
         private static readonly Color Amber = Color.FromRgb(0xFF, 0xB3, 0x47);
         private static readonly Color Blue = Color.FromRgb(0x2B, 0xB3, 0xFF);
         private static readonly Color Red = Color.FromRgb(0xFF, 0x5C, 0x6C);
+        private static readonly Color Violet = Color.FromRgb(0x8B, 0x6C, 0xFF);
 
         private void SetState(State next, string detail = null, bool animate = true)
         {
@@ -1029,7 +990,6 @@ namespace VPN
             int ms = animate ? 350 : 1;
             Color ring;
             Color icon;
-            Color aura;
             double glow;
             bool spin = false;
             Color spinColor = Amber;
@@ -1039,7 +999,6 @@ namespace VPN
                 case State.Connecting:
                     ring = Color.FromRgb(0x4A, 0x3E, 0x24);
                     icon = Amber;
-                    aura = Amber;
                     glow = 0;
                     spin = true;
                     StatusText.Text = "Подключение…";
@@ -1049,7 +1008,6 @@ namespace VPN
                 case State.Reconnecting:
                     ring = Color.FromRgb(0x4A, 0x3E, 0x24);
                     icon = Amber;
-                    aura = Amber;
                     glow = 0;
                     spin = true;
                     StatusText.Text = "Переподключение…";
@@ -1059,7 +1017,6 @@ namespace VPN
                 case State.Switching:
                     ring = Color.FromRgb(0x1E, 0x3A, 0x4E);
                     icon = Blue;
-                    aura = Blue;
                     glow = 0.5;
                     spin = true;
                     spinColor = Blue;
@@ -1072,7 +1029,6 @@ namespace VPN
                     {
                         ring = Amber;
                         icon = Amber;
-                        aura = Amber;
                         glow = 0.4;
                         StatusText.Text = "Нет ответа";
                         SubStatus.Text = "VPN включён, но сервер молчит · " + ActualServerTitle();
@@ -1081,7 +1037,6 @@ namespace VPN
                     {
                         ring = Green;
                         icon = Green;
-                        aura = Green;
                         glow = 1;
                         StatusText.Text = "Подключено";
                         SubStatus.Text = "Трафик защищён · " + ActualServerTitle();
@@ -1094,7 +1049,6 @@ namespace VPN
                     {
                         ring = Color.FromRgb(0x4E, 0x24, 0x2C);
                         icon = Red;
-                        aura = Red;
                         StatusText.Text = "Ошибка";
                         SubStatus.Text = Shorten(lastError, 200);
                     }
@@ -1102,9 +1056,8 @@ namespace VPN
                     {
                         ring = RingGrey;
                         icon = Grey;
-                        aura = Color.FromRgb(0x2A, 0x35, 0x50);
                         StatusText.Text = "Отключено";
-                        SubStatus.Text = settings.Servers.Count > 0 ? "Нажми на кнопку, чтобы подключиться" : "Сначала добавь подписку — «Подписка» внизу";
+                        SubStatus.Text = settings.Servers.Count > 0 ? "Нажми на кнопку, чтобы подключиться" : "Сначала добавь подписку — «Подписки» слева";
                     }
 
                     glow = 0;
@@ -1123,10 +1076,9 @@ namespace VPN
 
             RingBrush.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(ring, TimeSpan.FromMilliseconds(ms)));
             IconBrush.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(icon, TimeSpan.FromMilliseconds(ms)));
-            AuraStop.BeginAnimation(GradientStop.ColorProperty,
-                new ColorAnimation(Color.FromArgb((byte)(next == State.Off && lastError == null ? 0x30 : 0x38), aura.R, aura.G, aura.B), TimeSpan.FromMilliseconds(ms * 2)));
-            GlowStop.Color = Color.FromArgb(0x55, aura.R, aura.G, aura.B);
-            Glow.BeginAnimation(OpacityProperty, new DoubleAnimation(glow, TimeSpan.FromMilliseconds(ms * 2)));
+            // Свечение кнопки (и его «дыхание») ведёт ApplyLook → PowerBreath.
+            _ = glow;
+            breathOn = null;
 
             if (spin)
             {
@@ -1138,6 +1090,7 @@ namespace VPN
                 StopSpinner();
             }
 
+            ApplyLook(animate);
             UpdatePill();
             UpdateTray();
         }
@@ -1223,7 +1176,7 @@ namespace VPN
 
         // ================================================================== серверы
 
-        private void OnOpenServers(object sender, RoutedEventArgs e) => OpenDrawer(DrawerPage.Servers);
+        private void OnOpenServers(object sender, RoutedEventArgs e) => OpenPage(Page.Servers);
 
         private void OnServerSelected(object sender, SelectionChangedEventArgs e)
         {
@@ -1355,6 +1308,7 @@ namespace VPN
             }
 
             item.IsFavorite = !item.IsFavorite;
+            item.UpdateGroup();
             settings.Favorites.RemoveAll(n => n.Equals(item.Name, StringComparison.OrdinalIgnoreCase));
 
             if (item.IsFavorite)
@@ -1387,429 +1341,7 @@ namespace VPN
 
         private async void OnPingAll(object sender, RoutedEventArgs e) => await PingAllAsync();
 
-        private async void OnRefreshSubscription(object sender, RoutedEventArgs e) => await MaybeRefreshSubscriptionAsync(true);
-
-        // ================================================================== подписка
-
-        private async Task MaybeRefreshSubscriptionAsync(bool force)
-        {
-            if (string.IsNullOrWhiteSpace(settings.SubscriptionUrl))
-            {
-                if (force)
-                {
-                    ShowToast("Сначала вставь ссылку в «Подписке»", ToastKind.Warning, "Открыть", () => OpenDrawer(DrawerPage.Sub));
-                }
-
-                return;
-            }
-
-            bool due = settings.Servers.Count == 0 || DateTime.Now - settings.LastSubscriptionUpdate > TimeSpan.FromHours(settings.SubscriptionUpdateHours);
-
-            if (!force && !due)
-            {
-                return;
-            }
-
-            RefreshButton.IsEnabled = false;
-            RefreshButton.Content = "Обновляю…";
-
-            try
-            {
-                SubscriptionResult result = await Task.Run(() => Subscription.LoadAsync(settings.SubscriptionUrl));
-
-                if (result.Servers.Count == 0)
-                {
-                    ShowToast("В подписке не нашлось серверов" + (result.Skipped > 0 ? " (непонятных ссылок: " + result.Skipped + ")" : ""), ToastKind.Warning);
-                    return;
-                }
-
-                string selectedName = settings.Servers.FirstOrDefault(s => s.Tag == settings.SelectedServer)?.Name;
-                settings.Servers = result.Servers;
-                settings.SelectedServer = result.Servers.FirstOrDefault(s => s.Name == selectedName)?.Tag ?? "auto";
-                settings.SubscriptionTitle = result.Title;
-                settings.TrafficUsed = result.Used;
-                settings.TrafficTotal = result.Total;
-                settings.ExpireUnix = result.Expire;
-                settings.LastSubscriptionUpdate = DateTime.Now;
-                settings.Save();
-
-                RebuildServers();
-                UpdateSubscriptionCard();
-                Log.Write("Подписка обновлена: серверов " + result.Servers.Count + (result.Skipped > 0 ? ", пропущено " + result.Skipped : ""));
-                ShowToast("Подписка обновлена: серверов " + result.Servers.Count, ToastKind.Success);
-                WarnIfExpiring();
-
-                if (state == State.On)
-                {
-                    await ApplyChangesAsync();
-                }
-                else if (state == State.Off)
-                {
-                    SetState(State.Off, animate: false);
-                    _ = PingAllAsync();
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Write("Подписка: " + ex.Message);
-                ShowToast("Не удалось загрузить подписку: " + ex.Message, ToastKind.Error);
-            }
-            finally
-            {
-                RefreshButton.IsEnabled = true;
-                RefreshButton.Content = "Обновить";
-            }
-        }
-
-        /// <summary>Подписка скоро закончится или трафик на исходе — напоминаем.</summary>
-        private void WarnIfExpiring()
-        {
-            if (settings.ExpireUnix > 0)
-            {
-                int days = (int)Math.Ceiling((DateTimeOffset.FromUnixTimeSeconds(settings.ExpireUnix).LocalDateTime - DateTime.Now).TotalDays);
-
-                if (days <= 3)
-                {
-                    string text = days > 0 ? "Подписка закончится через " + days + " дн." : "Срок подписки истёк";
-                    SystemNotify("Подписка", text, System.Windows.Forms.ToolTipIcon.Warning);
-                    return;
-                }
-            }
-
-            if (settings.TrafficTotal > 0 && settings.TrafficUsed >= settings.TrafficTotal * 0.9)
-            {
-                SystemNotify("Подписка", "Осталось меньше 10% трафика", System.Windows.Forms.ToolTipIcon.Warning);
-            }
-        }
-
-        private async void OnSubSave(object sender, RoutedEventArgs e)
-        {
-            settings.SubscriptionUrl = SubUrl.Text.Trim();
-            settings.Save();
-            UpdateSubscriptionCard();
-            await MaybeRefreshSubscriptionAsync(true);
-        }
-
-        private void OnUpdateInterval(object sender, RoutedEventArgs e)
-        {
-            if (loading)
-            {
-                return;
-            }
-
-            settings.SubscriptionUpdateHours = Upd6.IsChecked == true ? 6 : Upd24.IsChecked == true ? 24 : 12;
-            settings.Save();
-        }
-
-        // ================================================================== туннели
-
-        private void OnModeChanged(object sender, RoutedEventArgs e)
-        {
-            if (loading)
-            {
-                return;
-            }
-
-            settings.DefaultViaVpn = ModeAll.IsChecked == true;
-            ScheduleApply();
-        }
-
-        private void OnTunnelOption(object sender, RoutedEventArgs e)
-        {
-            settings.RussiaDirect = RussiaCheck.IsChecked == true;
-            settings.BlockAds = AdsCheck.IsChecked == true;
-            ScheduleApply();
-        }
-
-        private void OnRuleToggle(object sender, RoutedEventArgs e)
-        {
-            if ((sender as FrameworkElement)?.DataContext is RuleItem item)
-            {
-                item.ViaVpn = !item.ViaVpn;
-                ScheduleApply();
-            }
-        }
-
-        private void OnRuleDelete(object sender, RoutedEventArgs e)
-        {
-            if ((sender as FrameworkElement)?.DataContext is RuleItem item)
-            {
-                apps.Remove(item);
-                sites.Remove(item);
-                UpdateRuleEmpties();
-                ScheduleApply();
-            }
-        }
-
-        private void UpdateRuleEmpties()
-        {
-            AppsEmpty.Visibility = apps.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            SitesEmpty.Visibility = sites.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        }
-
-        /// <summary>Новое правило по умолчанию делает «обратное» режиму: в «Всё через VPN» — напрямую, и наоборот.</summary>
-        private bool DefaultForNewRule => !settings.DefaultViaVpn;
-
-        private RuleItem AddRule(RuleKind kind, string value, string path, bool viaVpn)
-        {
-            value = kind == RuleKind.Site ? ConfigBuilder.NormalizeDomain(value) : value.Trim();
-
-            if (value.Length == 0)
-            {
-                return null;
-            }
-
-            ObservableCollection<RuleItem> list = kind == RuleKind.App ? apps : sites;
-            RuleItem existing = list.FirstOrDefault(r => r.Rule.Value.Equals(value, StringComparison.OrdinalIgnoreCase));
-
-            if (existing != null)
-            {
-                existing.ViaVpn = viaVpn;
-                return existing;
-            }
-
-            var item = new RuleItem(new RouteRule { Kind = kind, Value = value, Path = path ?? "", ViaVpn = viaVpn });
-            list.Insert(0, item);
-            UpdateRuleEmpties();
-            return item;
-        }
-
-        private void OnSiteAdd(object sender, RoutedEventArgs e) => AddSitesFromInput();
-
-        private void OnSiteKey(object sender, KeyEventArgs e)
-        {
-            if (e.Key == Key.Enter)
-            {
-                AddSitesFromInput();
-            }
-        }
-
-        private void AddSitesFromInput()
-        {
-            int added = 0;
-
-            foreach (string part in SiteInput.Text.Split(new[] { ',', ' ', ';', '\n' }, StringSplitOptions.RemoveEmptyEntries))
-            {
-                if (AddRule(RuleKind.Site, part, null, DefaultForNewRule) != null)
-                {
-                    added++;
-                }
-            }
-
-            if (added > 0)
-            {
-                SiteInput.Text = "";
-                ScheduleApply();
-            }
-        }
-
-        private void BuildPresets()
-        {
-            foreach (var preset in PresetSites)
-            {
-                var button = new Button { Content = "+ " + preset.Name, Style = (Style)FindResource("ChipButton"), Tag = preset.Domains };
-                button.Click += (s, _) =>
-                {
-                    foreach (string domain in (string[])((Button)s).Tag)
-                    {
-                        AddRule(RuleKind.Site, domain, null, true);
-                    }
-
-                    ScheduleApply();
-                    ShowToast(preset.Name + " → через VPN", ToastKind.Success);
-                };
-                Presets.Children.Add(button);
-            }
-        }
-
-        // --- окно выбора программ ---
-
-        private async void OnPickerOpen(object sender, RoutedEventArgs e)
-        {
-            PickerOverlay.Visibility = Visibility.Visible;
-            Fade(PickerOverlay, 1, 150, from: 0);
-            PickerSearch.Text = "";
-            PickerHint.Text = "Загружаю список…";
-            PickerList.ItemsSource = null;
-            candidates = await Task.Run(ListProcesses);
-            PickerHint.Text = DefaultForNewRule ? "пойдут через VPN" : "пойдут напрямую";
-            FilterCandidates();
-            PickerSearch.Focus();
-        }
-
-        private void OnPickerClose(object sender, RoutedEventArgs e) => PickerOverlay.Visibility = Visibility.Collapsed;
-
-        private void OnPickerSearch(object sender, TextChangedEventArgs e) => FilterCandidates();
-
-        private void FilterCandidates()
-        {
-            string q = PickerSearch.Text.Trim();
-            PickerList.ItemsSource = candidates
-                .Where(c => q.Length == 0 || c.Name.Contains(q, StringComparison.OrdinalIgnoreCase) || (c.Hint ?? "").Contains(q, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-        }
-
-        /// <summary>Клик по строке отмечает/снимает галочку.</summary>
-        private void OnPickerRowClick(object sender, SelectionChangedEventArgs e)
-        {
-            if (PickerList.SelectedItem is Candidate c)
-            {
-                c.Checked = !c.Checked;
-                PickerList.SelectedItem = null;
-            }
-        }
-
-        private void OnPickerAdd(object sender, RoutedEventArgs e)
-        {
-            List<Candidate> chosen = candidates.Where(c => c.Checked).ToList();
-
-            if (chosen.Count == 0)
-            {
-                ShowToast("Отметь программы галочками", ToastKind.Info);
-                return;
-            }
-
-            foreach (Candidate c in chosen)
-            {
-                RuleItem item = AddRule(RuleKind.App, c.Name, c.Path, DefaultForNewRule);
-
-                if (item != null)
-                {
-                    item.Icon = c.Icon;
-                }
-            }
-
-            PickerOverlay.Visibility = Visibility.Collapsed;
-            ScheduleApply();
-            ShowToast("Добавлено программ: " + chosen.Count, ToastKind.Success);
-        }
-
-        private void OnPickerBrowse(object sender, RoutedEventArgs e)
-        {
-            var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "Программы (*.exe)|*.exe", Title = "Выбери программу" };
-
-            if (dialog.ShowDialog(this) == true)
-            {
-                RuleItem item = AddRule(RuleKind.App, System.IO.Path.GetFileName(dialog.FileName), dialog.FileName, DefaultForNewRule);
-
-                if (item != null)
-                {
-                    item.Icon = IconFor(dialog.FileName);
-                }
-
-                PickerOverlay.Visibility = Visibility.Collapsed;
-                ScheduleApply();
-            }
-        }
-
-        private static List<Candidate> ListProcesses()
-        {
-            var result = new Dictionary<string, Candidate>(StringComparer.OrdinalIgnoreCase);
-            string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-
-            foreach (Process p in Process.GetProcesses())
-            {
-                try
-                {
-                    string path;
-
-                    try
-                    {
-                        path = p.MainModule?.FileName ?? "";
-                    }
-                    catch
-                    {
-                        continue;
-                    }
-
-                    if (path.Length == 0 || path.StartsWith(windows, StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-
-                    string exe = System.IO.Path.GetFileName(path);
-                    string title = "";
-
-                    try
-                    {
-                        title = p.MainWindowTitle;
-                    }
-                    catch
-                    {
-                    }
-
-                    if (result.TryGetValue(exe, out Candidate existing))
-                    {
-                        if (!string.IsNullOrEmpty(title))
-                        {
-                            existing.Hint = title;
-                            existing.HasWindow = true;
-                        }
-
-                        continue;
-                    }
-
-                    result[exe] = new Candidate
-                    {
-                        Name = exe,
-                        Hint = string.IsNullOrEmpty(title) ? path : title,
-                        Path = path,
-                        HasWindow = !string.IsNullOrEmpty(title),
-                        Icon = IconFor(path)
-                    };
-                }
-                finally
-                {
-                    p.Dispose();
-                }
-            }
-
-            // Программы с окнами — наверху: их обычно и ищут.
-            return result.Values.OrderByDescending(c => c.HasWindow).ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList();
-        }
-
-        private static readonly Dictionary<string, ImageSource> IconCache = new Dictionary<string, ImageSource>(StringComparer.OrdinalIgnoreCase);
-
-        /// <summary>Значок exe. Возвращает замороженную картинку — её можно создавать в фоновом потоке.</summary>
-        private static ImageSource IconFor(string path)
-        {
-            if (string.IsNullOrEmpty(path) || !File.Exists(path))
-            {
-                return null;
-            }
-
-            lock (IconCache)
-            {
-                if (IconCache.TryGetValue(path, out ImageSource cached))
-                {
-                    return cached;
-                }
-            }
-
-            try
-            {
-                using System.Drawing.Icon icon = System.Drawing.Icon.ExtractAssociatedIcon(path);
-
-                if (icon == null)
-                {
-                    return null;
-                }
-
-                BitmapSource source = Imaging.CreateBitmapSourceFromHIcon(icon.Handle, Int32Rect.Empty, BitmapSizeOptions.FromWidthAndHeight(32, 32));
-                source.Freeze();
-
-                lock (IconCache)
-                {
-                    IconCache[path] = source;
-                }
-
-                return source;
-            }
-            catch
-            {
-                return null;
-            }
-        }
+        private async void OnRefreshAll(object sender, RoutedEventArgs e) => await RefreshAllSubscriptionsAsync(true);
 
         // ================================================================== настройки и журнал
 
@@ -1832,6 +1364,7 @@ namespace VPN
             settings.AutoConnect = AutoConnectCheck.IsChecked == true;
             settings.AutoReconnect = ReconnectCheck.IsChecked == true;
             settings.Notifications = NotifyCheck.IsChecked == true;
+            settings.WatchClipboard = ClipboardCheck.IsChecked == true;
 
             bool hotkey = HotkeyCheck.IsChecked == true;
 
@@ -1844,6 +1377,24 @@ namespace VPN
             if (TopmostCheck.IsChecked == true != settings.Topmost)
             {
                 SetTopmost(TopmostCheck.IsChecked == true);
+            }
+
+            bool happ = HappLinksCheck.IsChecked == true;
+
+            if (happ != settings.HandleHappLinks)
+            {
+                settings.HandleHappLinks = happ;
+
+                if (happ)
+                {
+                    // Пользователь сам попросил — забираем ссылки, даже если их открывал установленный Happ.
+                    bool ok = UrlScheme.Register(UrlScheme.Happ, force: true);
+                    ShowToast(ok ? "Ссылки happ:// теперь открываются здесь" : "Не получилось — подробности в журнале", ok ? ToastKind.Success : ToastKind.Error);
+                }
+                else
+                {
+                    UrlScheme.Unregister(UrlScheme.Happ);
+                }
             }
 
             settings.Save();
@@ -1870,18 +1421,7 @@ namespace VPN
             LogOverlay.Visibility = Visibility.Collapsed;
         }
 
-        private void OnLogCopy(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                Clipboard.SetText(Log.All());
-                ShowToast("Журнал скопирован — вставь его в чат", ToastKind.Success);
-            }
-            catch
-            {
-                ShowToast("Не удалось скопировать", ToastKind.Error);
-            }
-        }
+        private void OnLogCopy(object sender, RoutedEventArgs e) => CopyText(Log.All(), "Журнал скопирован — вставь его в чат");
 
         // ================================================================== уведомление в окне
 
@@ -1893,7 +1433,7 @@ namespace VPN
             Error
         }
 
-        /// <summary>Всплывашка внизу корпуса. Можно добавить кнопку действия («Вернуть», «На Авто»).</summary>
+        /// <summary>Всплывашка внизу корпуса. Можно добавить кнопку действия («Вернуть», «Добавить»).</summary>
         private void ShowToast(string text, ToastKind kind = ToastKind.Info, string actionText = null, Action action = null)
         {
             ToastText.Text = text;
@@ -1912,10 +1452,10 @@ namespace VPN
 
             Fade(Toast, 1, 180);
             ToastShift.BeginAnimation(TranslateTransform.YProperty,
-                new DoubleAnimation(10, 0, TimeSpan.FromMilliseconds(220)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
+                new DoubleAnimation(12, 0, TimeSpan.FromMilliseconds(240)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
 
             toastTimer.Stop();
-            toastTimer.Interval = TimeSpan.FromSeconds(action != null ? 6 : 3.2);
+            toastTimer.Interval = TimeSpan.FromSeconds(action != null ? 7 : 3.2);
             toastTimer.Start();
         }
 
@@ -1936,6 +1476,19 @@ namespace VPN
 
         // ================================================================== мелочи
 
+        private void CopyText(string text, string done)
+        {
+            try
+            {
+                Clipboard.SetText(text);
+                ShowToast(done, ToastKind.Success);
+            }
+            catch
+            {
+                ShowToast("Не удалось скопировать", ToastKind.Error);
+            }
+        }
+
         private static void Fade(UIElement element, double to, int ms, double? from = null)
         {
             var a = from.HasValue
@@ -1943,11 +1496,6 @@ namespace VPN
                 : new DoubleAnimation(to, TimeSpan.FromMilliseconds(ms));
             a.EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut };
             element.BeginAnimation(OpacityProperty, a);
-        }
-
-        private static void AnimateWidth(FrameworkElement element, double to)
-        {
-            element.BeginAnimation(WidthProperty, new DoubleAnimation(to, TimeSpan.FromMilliseconds(500)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
         }
 
         private static string Shorten(string text, int max) => text.Length > max ? text.Substring(0, max) + "…" : text;
@@ -1975,11 +1523,25 @@ namespace VPN
 
     public sealed class ServerItem : Notify
     {
+        private static readonly Dictionary<string, (string Label, Color Color)> Protocols = new Dictionary<string, (string, Color)>
+        {
+            ["vless"] = ("VLESS", Color.FromRgb(0x8B, 0x6C, 0xFF)),
+            ["vmess"] = ("VMESS", Color.FromRgb(0x4F, 0x8B, 0xFF)),
+            ["trojan"] = ("TROJAN", Color.FromRgb(0xFF, 0x5F, 0xA2)),
+            ["shadowsocks"] = ("SS", Color.FromRgb(0x22, 0xD3, 0xEE)),
+            ["hysteria2"] = ("HY2", Color.FromRgb(0xFF, 0x9F, 0x43)),
+            ["tuic"] = ("TUIC", Color.FromRgb(0x2D, 0xD4, 0xBF)),
+            ["anytls"] = ("ANYTLS", Color.FromRgb(0xA3, 0xE6, 0x35)),
+            ["socks"] = ("SOCKS", Color.FromRgb(0x8B, 0x95, 0xAA)),
+            ["http"] = ("HTTP", Color.FromRgb(0x8B, 0x95, 0xAA))
+        };
+
         private string pingText = "";
         private Brush pingBrush = Brushes.Gray;
         private bool isSelected;
         private bool isFavorite;
         private string subtitle = "";
+        private string protocol = "";
 
         public string Tag { get; set; }
         public string Name { get; set; } = "";
@@ -1990,28 +1552,88 @@ namespace VPN
         public int Index { get; set; }
         public int Ping { get; set; } = int.MaxValue;
 
-        public string Subtitle { get => subtitle; set => Set(ref subtitle, value); }
-        public string PingText { get => pingText; set => Set(ref pingText, value); }
-        public Brush PingBrush { get => pingBrush; set => Set(ref pingBrush, value); }
-        public bool IsFavorite { get => isFavorite; set => Set(ref isFavorite, value); }
+        /// <summary>Группа в списке: подписка или «Избранное».</summary>
+        public string GroupKey { get; set; } = "";
+        public int GroupOrder { get; set; }
 
-        public bool IsSelected
+        /// <summary>Подписка, откуда сервер (группа без учёта избранного).</summary>
+        public string SubGroupKey { get; set; } = "";
+        public int SubGroupOrder { get; set; }
+
+        public string Protocol
         {
-            get => isSelected;
+            get => protocol;
             set
             {
-                Set(ref isSelected, value);
-                Raise(nameof(CheckVisibility));
+                protocol = value ?? "";
+                Raise(nameof(Proto));
+                Raise(nameof(ProtoBrush));
             }
         }
 
-        public Visibility CheckVisibility => isSelected ? Visibility.Visible : Visibility.Hidden;
+        public string Proto => Protocols.TryGetValue(protocol, out var p) ? p.Label : protocol.ToUpperInvariant();
+
+        public Brush ProtoBrush
+        {
+            get
+            {
+                Color c = Protocols.TryGetValue(protocol, out var p) ? p.Color : Color.FromRgb(0x8B, 0x95, 0xAA);
+                var b = new SolidColorBrush(c);
+                b.Freeze();
+                return b;
+            }
+        }
+
+        public Visibility ProtoVisibility => protocol.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        public string Subtitle { get => subtitle; set => Set(ref subtitle, value); }
+
+        public string PingText
+        {
+            get => pingText;
+            set
+            {
+                Set(ref pingText, value);
+                Raise(nameof(PingDotVisibility));
+            }
+        }
+
+        public Brush PingBrush
+        {
+            get => pingBrush;
+            set
+            {
+                Set(ref pingBrush, value);
+                Raise(nameof(PingColor));
+            }
+        }
+
+        /// <summary>Цвет свечения точки пинга.</summary>
+        public Color PingColor => pingBrush is SolidColorBrush s ? s.Color : Colors.Gray;
+
+        public Visibility PingDotVisibility => pingText.Length > 0 && pingText != "…" ? Visibility.Visible : Visibility.Collapsed;
+
+        public bool IsFavorite { get => isFavorite; set => Set(ref isFavorite, value); }
+
+        public bool IsSelected { get => isSelected; set => Set(ref isSelected, value); }
 
         /// <summary>У «Авто» звёздочки нет.</summary>
         public Visibility StarVisibility => Tag == "auto" ? Visibility.Collapsed : Visibility.Visible;
+
+        public void UpdateGroup()
+        {
+            if (Tag == "auto")
+            {
+                return;
+            }
+
+            GroupKey = isFavorite ? "Избранное" : SubGroupKey;
+            GroupOrder = isFavorite ? 1 : SubGroupOrder;
+            Raise(nameof(GroupKey));
+        }
     }
 
-    /// <summary>«Авто» → избранные → остальные; внутри групп — по пингу или как в подписке.</summary>
+    /// <summary>«Авто» → избранные → подписки по порядку; внутри групп — по пингу или как в подписке.</summary>
     public sealed class ServerOrder : IComparer
     {
         private readonly bool byPing;
@@ -2028,7 +1650,7 @@ namespace VPN
                 return 0;
             }
 
-            int group = Group(a).CompareTo(Group(b));
+            int group = a.GroupOrder.CompareTo(b.GroupOrder);
 
             if (group != 0)
             {
@@ -2046,41 +1668,6 @@ namespace VPN
             }
 
             return a.Index.CompareTo(b.Index);
-        }
-
-        private static int Group(ServerItem s) => s.Tag == "auto" ? 0 : s.IsFavorite ? 1 : 2;
-    }
-
-    public sealed class RuleItem : Notify
-    {
-        private ImageSource icon;
-
-        public RouteRule Rule { get; }
-
-        public RuleItem(RouteRule rule)
-        {
-            Rule = rule;
-        }
-
-        public string Title => Rule.Value;
-
-        public string Subtitle => Rule.Kind == RuleKind.App ? Rule.Path ?? "" : "";
-
-        public Visibility SubtitleVisibility => string.IsNullOrEmpty(Subtitle) ? Visibility.Collapsed : Visibility.Visible;
-
-        public ImageSource Icon { get => icon; set => Set(ref icon, value); }
-
-        public bool ViaVpn
-        {
-            get => Rule.ViaVpn;
-            set
-            {
-                if (Rule.ViaVpn != value)
-                {
-                    Rule.ViaVpn = value;
-                    Raise(nameof(ViaVpn));
-                }
-            }
         }
     }
 

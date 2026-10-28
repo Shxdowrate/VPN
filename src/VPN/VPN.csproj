@@ -12,7 +12,7 @@
     <RootNamespace>VPN</RootNamespace>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <Product>VPN</Product>
     <Company>Shxdowrate</Company>
   </PropertyGroup>

@@ -11,52 +11,53 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Media.Effects;
 using System.Windows.Threading;
 using VPN.Core;
 
 namespace VPN
 {
     /// <summary>
-    /// Всё, что касается самого окна: фигурная форма, выдвижная панель слева, положение на экране,
-    /// трей, системные уведомления и горячая клавиша.
+    /// Всё, что касается самого окна: фигурная форма и неоновое свечение, разделы, положение на экране,
+    /// трей, системные уведомления, горячая клавиша, ссылки из других программ и буфер обмена.
     /// </summary>
     public partial class MainWindow
     {
-        private enum DrawerPage
+        private enum Page
         {
             Servers,
             Tunnels,
-            Sub,
+            Subs,
             Settings
         }
 
-        /// <summary>Где начинается «смартфон» внутри окна: 16 тень + 420 панель + 12 зазор.</summary>
-        private const double PhoneOffset = 448;
+        /// <summary>Отступ вокруг корпуса под свечение и тень (Margin корневой сетки).</summary>
+        private const double GlowPad = 22;
 
-        /// <summary>Отступ под тень справа, сверху и снизу.</summary>
-        private const double ShadowPad = 16;
-
-        private const double PhoneMinWidth = 360;
-        private const double PhoneDefaultWidth = 372;
+        /// <summary>Ширина правой колонки (кнопка и статус) — как в разметке.</summary>
+        private const double HeroWidth = 372;
 
         private readonly DispatcherTimer placementSave = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
-        private bool drawerOpen;
-        private DrawerPage drawerPage;
-        private double drawerShiftApplied;
-        private bool animatingLeft;
+        private Page page;
         private bool reallyExit;
         private bool trayHintShown;
+        private string lastClipboardOffer = "";
 
         private System.Windows.Forms.NotifyIcon tray;
         private System.Windows.Forms.ToolStripMenuItem trayToggle;
         private System.Windows.Forms.ToolStripMenuItem trayStatus;
         private System.Windows.Forms.ToolStripMenuItem trayServers;
+        private System.Windows.Forms.ToolStripMenuItem trayProfiles;
         private readonly Dictionary<string, System.Drawing.Icon> trayIcons = new Dictionary<string, System.Drawing.Icon>();
 
         // ================================================================== запуск окна
 
         private void InitShell()
         {
+            // «Живой» цвет: своя, не замороженная кисть, чтобы её можно было плавно перекрашивать.
+            liveBrush = new SolidColorBrush(Violet);
+            Resources["Live"] = liveBrush;
+
             RestorePlacement();
             Topmost = settings.Topmost;
             UpdatePinLook();
@@ -69,12 +70,6 @@ namespace VPN
 
             LocationChanged += (_, _) =>
             {
-                if (!animatingLeft)
-                {
-                    // Окно передвинули руками, пока панель открыта, — назад его не возвращаем.
-                    drawerShiftApplied = 0;
-                }
-
                 placementSave.Stop();
                 placementSave.Start();
             };
@@ -91,13 +86,19 @@ namespace VPN
                 ApplyHotkey();
             };
 
-            PreviewKeyDown += (_, e) =>
-            {
-                if (e.Key != Key.Escape)
-                {
-                    return;
-                }
+            // Свечение крутится только когда окно видно — в трее оно ничего не тратит.
+            IsVisibleChanged += (_, _) => UpdateGlowMotion();
+            StateChanged += (_, _) => UpdateGlowMotion();
 
+            Activated += (_, _) => OfferClipboard();
+
+            PreviewKeyDown += OnWindowKey;
+        }
+
+        private void OnWindowKey(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Escape)
+            {
                 if (PickerOverlay.Visibility == Visibility.Visible)
                 {
                     PickerOverlay.Visibility = Visibility.Collapsed;
@@ -108,32 +109,43 @@ namespace VPN
                 }
                 else
                 {
-                    CloseDrawer();
+                    HideToast();
                 }
 
                 e.Handled = true;
-            };
+                return;
+            }
+
+            // Ctrl+V вне поля ввода — добавить ссылку из буфера (подписку, сервер, профиль).
+            if (e.Key == Key.V && Keyboard.Modifiers == ModifierKeys.Control && Keyboard.FocusedElement is not TextBoxBase)
+            {
+                e.Handled = true;
+                _ = ImportClipboardAsync(explicitRequest: true);
+                return;
+            }
+
+            // Ctrl+1…4 — разделы.
+            if (Keyboard.Modifiers == ModifierKeys.Control && e.Key >= Key.D1 && e.Key <= Key.D4)
+            {
+                OpenPage((Page)(e.Key - Key.D1));
+                e.Handled = true;
+            }
         }
 
-        /// <summary>Возвращаем «смартфон» туда, где он был; если того экрана уже нет — по центру.</summary>
+        /// <summary>Возвращаем окно туда, где оно было; если того экрана уже нет — по центру.</summary>
         private void RestorePlacement()
         {
             Rect work = SystemParameters.WorkArea;
-            MinHeight = Math.Min(MinHeight, work.Height + 2 * ShadowPad);
-
-            double phoneWidth = settings.WindowWidth >= PhoneMinWidth ? settings.WindowWidth : PhoneDefaultWidth;
-            Width = PhoneOffset + phoneWidth + ShadowPad;
-            Height = settings.WindowHeight >= MinHeight ? settings.WindowHeight : Math.Max(MinHeight, Math.Min(780, work.Height + 2 * ShadowPad - 20));
+            Width = settings.WindowWidth >= MinWidth ? settings.WindowWidth : Math.Min(Width, work.Width + 2 * GlowPad);
+            Height = settings.WindowHeight >= MinHeight ? settings.WindowHeight : Math.Min(Height, work.Height + 2 * GlowPad);
 
             var screen = new Rect(SystemParameters.VirtualScreenLeft, SystemParameters.VirtualScreenTop,
                 SystemParameters.VirtualScreenWidth, SystemParameters.VirtualScreenHeight);
             bool saved = !double.IsNaN(settings.WindowLeft) && !double.IsNaN(settings.WindowTop) &&
-                         screen.IntersectsWith(new Rect(settings.WindowLeft, settings.WindowTop, phoneWidth, 120));
+                         screen.IntersectsWith(new Rect(settings.WindowLeft + GlowPad, settings.WindowTop + GlowPad, 200, 120));
 
-            double phoneLeft = saved ? settings.WindowLeft : work.Left + (work.Width - phoneWidth) / 2;
-            double top = saved ? settings.WindowTop - ShadowPad : work.Top + (work.Height - Height) / 2;
-            Left = phoneLeft - PhoneOffset;
-            Top = top;
+            Left = saved ? settings.WindowLeft : work.Left + (work.Width - Width) / 2;
+            Top = saved ? settings.WindowTop : work.Top + (work.Height - Height) / 2;
         }
 
         private void SavePlacement()
@@ -143,9 +155,9 @@ namespace VPN
                 return;
             }
 
-            settings.WindowLeft = Left + PhoneOffset - drawerShiftApplied;
-            settings.WindowTop = Top + ShadowPad;
-            settings.WindowWidth = Math.Max(PhoneMinWidth, Width - PhoneOffset - ShadowPad);
+            settings.WindowLeft = Left;
+            settings.WindowTop = Top;
+            settings.WindowWidth = Width;
             settings.WindowHeight = Height;
             settings.Save();
         }
@@ -154,46 +166,50 @@ namespace VPN
 
         private void OnBodySizeChanged(object sender, SizeChangedEventArgs e)
         {
-            Geometry shape = BuildBodyShape(BodyHost.ActualWidth, BodyHost.ActualHeight);
+            Geometry shape = BuildBodyShape(BodyHost.ActualWidth, BodyHost.ActualHeight, HeroWidth);
+            BodyGlow.Data = shape;
             BodyShadow.Data = shape;
             BodyFill.Data = shape;
-            BodyStroke.Data = shape;
+            BodyRim.Data = shape;
+            BodyEdge.Data = shape;
             BodyContent.Clip = shape;
         }
 
         /// <summary>
-        /// Корпус: прямоугольник с большими скруглениями, а посередине сверху — плавный выступ-«капсула»,
-        /// в котором живёт статус. Края выступа — S-образные кривые, без углов.
+        /// Корпус: правая колонка приподнята сверху на <c>rise</c>, а левая — опущена снизу на столько же.
+        /// Получается «ступенька» с плавными S-образными переходами, без единого острого угла.
         /// </summary>
-        private static Geometry BuildBodyShape(double w, double h)
+        private static Geometry BuildBodyShape(double w, double h, double heroWidth)
         {
-            const double rise = 14;   // насколько выступ выше основного края
-            const double radius = 30; // скругление углов корпуса
-            const double curve = 24;  // ширина плавного перехода
-            double tab = Math.Min(176, Math.Max(80, w - 2 * radius - 2 * curve - 60));
+            const double rise = 18;   // высота ступеньки
+            const double radius = 28; // скругление углов
+            const double curve = 30;  // ширина плавного перехода
 
-            if (w < 2 * radius + 1 || h < rise + 2 * radius + 1)
+            double x0 = w - heroWidth;
+
+            if (w < heroWidth + 2 * radius + curve || h < 2 * (rise + radius) + 1)
             {
                 return Geometry.Empty;
             }
-
-            double cx = w / 2;
-            double left = cx - tab / 2;
-            double right = cx + tab / 2;
 
             var g = new StreamGeometry();
 
             using (StreamGeometryContext c = g.Open())
             {
+                // верх: левая часть ниже, правая выше
                 c.BeginFigure(new Point(radius, rise), true, true);
-                c.LineTo(new Point(left - curve, rise), true, true);
-                c.BezierTo(new Point(left - curve * 0.45, rise), new Point(left - curve * 0.55, 0), new Point(left, 0), true, true);
-                c.LineTo(new Point(right, 0), true, true);
-                c.BezierTo(new Point(right + curve * 0.55, 0), new Point(right + curve * 0.45, rise), new Point(right + curve, rise), true, true);
-                c.LineTo(new Point(w - radius, rise), true, true);
-                c.ArcTo(new Point(w, rise + radius), new Size(radius, radius), 0, false, SweepDirection.Clockwise, true, true);
-                c.LineTo(new Point(w, h - radius), true, true);
-                c.ArcTo(new Point(w - radius, h), new Size(radius, radius), 0, false, SweepDirection.Clockwise, true, true);
+                c.LineTo(new Point(x0 - curve, rise), true, true);
+                c.BezierTo(new Point(x0 - curve * 0.45, rise), new Point(x0 - curve * 0.55, 0), new Point(x0, 0), true, true);
+                c.LineTo(new Point(w - radius, 0), true, true);
+                c.ArcTo(new Point(w, radius), new Size(radius, radius), 0, false, SweepDirection.Clockwise, true, true);
+
+                // правый край и низ правой колонки (она короче снизу)
+                c.LineTo(new Point(w, h - rise - radius), true, true);
+                c.ArcTo(new Point(w - radius, h - rise), new Size(radius, radius), 0, false, SweepDirection.Clockwise, true, true);
+                c.LineTo(new Point(x0, h - rise), true, true);
+                c.BezierTo(new Point(x0 - curve * 0.45, h - rise), new Point(x0 - curve * 0.55, h), new Point(x0 - curve, h), true, true);
+
+                // низ левой части и левый край
                 c.LineTo(new Point(radius, h), true, true);
                 c.ArcTo(new Point(0, h - radius), new Size(radius, radius), 0, false, SweepDirection.Clockwise, true, true);
                 c.LineTo(new Point(0, rise + radius), true, true);
@@ -204,19 +220,165 @@ namespace VPN
             return g;
         }
 
+        // ================================================================== свечение (RTX)
+
+        private SolidColorBrush liveBrush;
+        private double glowPeriod = -1;
+        private bool breathing;
+
+        /// <summary>Как сейчас должен выглядеть свет: два цвета градиента, яркость и скорость «бега» по кромке.</summary>
+        private (Color A, Color B, double Strength, double Period, bool Breathe) CurrentLook()
+        {
+            Color cyan = Color.FromRgb(0x22, 0xD3, 0xEE);
+            Color pink = Color.FromRgb(0xFF, 0x5F, 0xA2);
+            Color lime = Color.FromRgb(0xA3, 0xE6, 0x35);
+            Color orange = Color.FromRgb(0xFF, 0x7A, 0x3D);
+
+            switch (state)
+            {
+                case State.Connecting:
+                case State.Reconnecting:
+                    return (Amber, pink, 0.85, 2.2, false);
+                case State.Switching:
+                    return (Blue, Violet, 0.8, 2.6, false);
+                case State.On when noResponseWarned:
+                    return (Amber, orange, 0.8, 3.0, false);
+                case State.On:
+                    // Цвет зависит от качества связи: быстрый — зелёно-бирюзовый, средний — с лаймом, медленный — тёплый.
+                    if (lastDelay is int d && d >= 250)
+                    {
+                        return (Green, Amber, 0.7, 5.0, true);
+                    }
+
+                    if (lastDelay is int m && m >= 120)
+                    {
+                        return (Green, lime, 0.7, 6.0, true);
+                    }
+
+                    return (Green, cyan, 0.72, 7.0, true);
+                default:
+                    return lastError != null ? (Red, orange, 0.7, 4.0, false) : (Violet, Blue, 0.42, 10.0, false);
+            }
+        }
+
+        /// <summary>Перекрасить всё «светящееся»: кромку, ореол, логотип, разделитель, кольцо кнопки, шкалу.</summary>
+        private void ApplyLook(bool animate)
+        {
+            if (liveBrush == null)
+            {
+                return;
+            }
+
+            var (a, b, strength, period, breathe) = CurrentLook();
+            Duration d = TimeSpan.FromMilliseconds(animate ? 600 : 1);
+
+            void Paint(Animatable target, DependencyProperty property, Color to) =>
+                target.BeginAnimation(property, new ColorAnimation(to, d) { EasingFunction = new CubicEase() });
+
+            Paint(liveBrush, SolidColorBrush.ColorProperty, a);
+            Paint(GlowStop1, GradientStop.ColorProperty, a);
+            Paint(GlowStop2, GradientStop.ColorProperty, b);
+            Paint(GlowStop3, GradientStop.ColorProperty, a);
+            Paint(LogoStop, GradientStop.ColorProperty, a);
+            Paint(LogoGlow, DropShadowEffect.ColorProperty, a);
+            Paint(DividerStop, GradientStop.ColorProperty, WithAlpha(a, 0x66));
+            Paint(AuraStop, GradientStop.ColorProperty, WithAlpha(a, (byte)(state == State.Off && lastError == null ? 0x26 : 0x34)));
+            Paint(GlowStop, GradientStop.ColorProperty, WithAlpha(a, 0x66));
+            Paint(RingGlow, DropShadowEffect.ColorProperty, a);
+            Paint(IconGlow, DropShadowEffect.ColorProperty, a);
+            Paint(TickStop1, GradientStop.ColorProperty, a);
+            Paint(TickStop2, GradientStop.ColorProperty, b);
+
+            BodyGlow.BeginAnimation(OpacityProperty, new DoubleAnimation(strength, d));
+            bool lit = state != State.Off || lastError != null;
+            RingGlow.BeginAnimation(DropShadowEffect.OpacityProperty, new DoubleAnimation(lit ? 0.75 : 0, d));
+            IconGlow.BeginAnimation(DropShadowEffect.OpacityProperty, new DoubleAnimation(state == State.On ? 0.9 : lit ? 0.5 : 0, d));
+            TickLive.BeginAnimation(OpacityProperty, new DoubleAnimation(state == State.Off ? 0 : 0.9, d));
+
+            glowPeriodWanted = period;
+            breathing = breathe;
+            UpdateGlowMotion();
+        }
+
+        private double glowPeriodWanted = 10;
+
+        /// <summary>Запустить или остановить бег света по кромке, вращение шкалы и «дыхание» кнопки.</summary>
+        private void UpdateGlowMotion()
+        {
+            bool visible = IsVisible && WindowState != WindowState.Minimized;
+
+            if (!visible)
+            {
+                GlowRotate.BeginAnimation(RotateTransform.AngleProperty, null);
+                TickRotate.BeginAnimation(RotateTransform.AngleProperty, null);
+                PowerBreath(false);
+                glowPeriod = -1;
+                return;
+            }
+
+            if (Math.Abs(glowPeriod - glowPeriodWanted) > 0.01)
+            {
+                glowPeriod = glowPeriodWanted;
+                double from = GlowRotate.Angle % 360;
+                var spin = new DoubleAnimation(from, from + 360, TimeSpan.FromSeconds(glowPeriod)) { RepeatBehavior = RepeatBehavior.Forever };
+                // 30 кадров хватает для плавного света и вдвое меньше нагрузки.
+                Timeline.SetDesiredFrameRate(spin, 30);
+                GlowRotate.BeginAnimation(RotateTransform.AngleProperty, spin);
+
+                var ticks = new DoubleAnimation(0, 360, TimeSpan.FromSeconds(glowPeriod * 3)) { RepeatBehavior = RepeatBehavior.Forever };
+                Timeline.SetDesiredFrameRate(ticks, 30);
+                TickRotate.BeginAnimation(RotateTransform.AngleProperty, state == State.Off ? null : ticks);
+            }
+
+            PowerBreath(breathing && state == State.On);
+        }
+
+        /// <summary>Сейчас «дышит» (true), стоит (false) или ещё не выставлено (null).</summary>
+        private bool? breathOn;
+
+        /// <summary>Мягкая «пульсация» свечения кнопки, пока подключено.</summary>
+        private void PowerBreath(bool on)
+        {
+            if (breathOn == on)
+            {
+                return;
+            }
+
+            breathOn = on;
+
+            if (on)
+            {
+                var breath = new DoubleAnimation(0.55, 1, TimeSpan.FromSeconds(2.4))
+                {
+                    AutoReverse = true,
+                    RepeatBehavior = RepeatBehavior.Forever,
+                    EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
+                };
+                Timeline.SetDesiredFrameRate(breath, 30);
+                Glow.BeginAnimation(OpacityProperty, breath);
+            }
+            else
+            {
+                double rest = state == State.Switching ? 0.5 : state == State.On ? 0.4 : 0;
+                Glow.BeginAnimation(OpacityProperty, new DoubleAnimation(rest, TimeSpan.FromMilliseconds(400)));
+            }
+        }
+
+        private static Color WithAlpha(Color c, byte alpha) => Color.FromArgb(alpha, c.R, c.G, c.B);
+
         // ================================================================== перетаскивание
 
-        /// <summary>Окно тянется за любое «пустое» место корпуса, капсулу и шапку панели.</summary>
+        /// <summary>Окно тянется за любое «пустое» место корпуса, рельсы и шапок.</summary>
         private void OnDragArea(object sender, MouseButtonEventArgs e)
         {
-            if (e.ChangedButton != MouseButton.Left || e.ButtonState != MouseButtonState.Pressed)
+            if (e.ChangedButton != MouseButton.Left || e.ButtonState != MouseButtonState.Pressed || e.Handled)
             {
                 return;
             }
 
             for (DependencyObject d = e.OriginalSource as DependencyObject; d != null; d = TreeParent(d))
             {
-                if (d == PowerButton || d is ButtonBase || d is TextBoxBase || d is ScrollBar || d is Thumb || d is ListBoxItem)
+                if (d == PowerButton || d is ButtonBase || d is TextBoxBase || d is ScrollBar || d is Thumb || d is ListBoxItem || d is ScrollViewer)
                 {
                     return;
                 }
@@ -226,6 +388,8 @@ namespace VPN
                     break;
                 }
             }
+
+            e.Handled = true;
 
             try
             {
@@ -240,159 +404,93 @@ namespace VPN
         private static DependencyObject TreeParent(DependencyObject d) =>
             d is Visual || d is System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(d) : LogicalTreeHelper.GetParent(d);
 
-        // ================================================================== выдвижная панель
+        // ================================================================== разделы
 
-        private void OnDockClick(object sender, RoutedEventArgs e)
+        private void OnNavClick(object sender, RoutedEventArgs e)
         {
-            DrawerPage page = sender == DockTunnels ? DrawerPage.Tunnels
-                : sender == DockSub ? DrawerPage.Sub
-                : sender == DockSettings ? DrawerPage.Settings
-                : DrawerPage.Servers;
-
-            if (drawerOpen && drawerPage == page)
-            {
-                CloseDrawer();
-            }
-            else
-            {
-                OpenDrawer(page);
-            }
+            Page target = sender == NavTunnels ? Page.Tunnels
+                : sender == NavSubs ? Page.Subs
+                : sender == NavSettings ? Page.Settings
+                : Page.Servers;
+            OpenPage(target);
         }
 
-        private void OnDrawerClose(object sender, RoutedEventArgs e) => CloseDrawer();
-
-        /// <summary>Открыть раздел слева. Если слева не хватает экрана — окно плавно отъезжает вправо.</summary>
-        private void OpenDrawer(DrawerPage page)
+        private void OpenPage(Page target)
         {
-            drawerPage = page;
-            DockServers.IsChecked = page == DrawerPage.Servers;
-            DockTunnels.IsChecked = page == DrawerPage.Tunnels;
-            DockSub.IsChecked = page == DrawerPage.Sub;
-            DockSettings.IsChecked = page == DrawerPage.Settings;
+            bool changed = target != page || !IsLoaded;
+            page = target;
+            NavServers.IsChecked = target == Page.Servers;
+            NavTunnels.IsChecked = target == Page.Tunnels;
+            NavSubs.IsChecked = target == Page.Subs;
+            NavSettings.IsChecked = target == Page.Settings;
 
-            FrameworkElement show = page switch
+            FrameworkElement show = target switch
             {
-                DrawerPage.Tunnels => PageTunnels,
-                DrawerPage.Sub => PageSub,
-                DrawerPage.Settings => PageSettings,
+                Page.Tunnels => PageTunnels,
+                Page.Subs => PageSubs,
+                Page.Settings => PageSettings,
                 _ => PageServers
             };
 
-            DrawerTitle.Text = page switch
+            PageTitle.Text = target switch
             {
-                DrawerPage.Tunnels => "Туннели",
-                DrawerPage.Sub => "Подписка",
-                DrawerPage.Settings => "Настройки",
+                Page.Tunnels => "Туннели",
+                Page.Subs => "Подписки",
+                Page.Settings => "Настройки",
                 _ => "Серверы"
             };
 
-            foreach (FrameworkElement p in new FrameworkElement[] { PageServers, PageTunnels, PageSub, PageSettings })
+            foreach (FrameworkElement p in new FrameworkElement[] { PageServers, PageTunnels, PageSubs, PageSettings })
             {
                 p.Visibility = p == show ? Visibility.Visible : Visibility.Collapsed;
             }
 
             PickerOverlay.Visibility = Visibility.Collapsed;
             OnLogClose(null, null);
+            UpdatePageHint();
 
-            if (drawerOpen)
+            if (changed)
             {
-                Fade(show, 1, 160, from: 0);
-                return;
-            }
-
-            drawerOpen = true;
-            EnsureDrawerOnScreen();
-            DrawerHost.Visibility = Visibility.Visible;
-            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
-            DrawerShift.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(60, 0, TimeSpan.FromMilliseconds(260)) { EasingFunction = ease });
-            DrawerHost.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(200)) { EasingFunction = ease });
-
-            if (page == DrawerPage.Sub)
-            {
-                // ширина полосы трафика известна только после раскладки
-                Dispatcher.BeginInvoke(new Action(UpdateSubscriptionCard), DispatcherPriority.Loaded);
+                // Плавное появление со сдвигом снизу.
+                var shift = new TranslateTransform(0, 10);
+                show.RenderTransform = shift;
+                shift.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(10, 0, TimeSpan.FromMilliseconds(260)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
+                Fade(show, 1, 220, from: 0);
             }
         }
 
-        private void CloseDrawer()
+        /// <summary>Подзаголовок раздела: что в нём сейчас.</summary>
+        private void UpdatePageHint()
         {
-            if (!drawerOpen)
+            switch (page)
             {
-                return;
-            }
-
-            drawerOpen = false;
-            DockServers.IsChecked = false;
-            DockTunnels.IsChecked = false;
-            DockSub.IsChecked = false;
-            DockSettings.IsChecked = false;
-            logVisible = false;
-
-            var ease = new CubicEase { EasingMode = EasingMode.EaseIn };
-            var slide = new DoubleAnimation(0, 60, TimeSpan.FromMilliseconds(180)) { EasingFunction = ease };
-            slide.Completed += (_, _) =>
-            {
-                if (!drawerOpen)
-                {
-                    DrawerHost.Visibility = Visibility.Collapsed;
-                }
-            };
-            DrawerShift.BeginAnimation(TranslateTransform.XProperty, slide);
-            DrawerHost.BeginAnimation(OpacityProperty, new DoubleAnimation(0, TimeSpan.FromMilliseconds(170)));
-
-            if (drawerShiftApplied > 0)
-            {
-                double back = drawerShiftApplied;
-                drawerShiftApplied = 0;
-                AnimateLeft(Left - back);
+                case Page.Servers:
+                    int subs = settings.Subscriptions.Count(s => s.Servers.Count > 0);
+                    PageHint.Text = settings.Servers.Count == 0
+                        ? "добавь подписку или ссылку на сервер"
+                        : settings.Servers.Count + " " + Plural(settings.Servers.Count, "сервер", "сервера", "серверов") +
+                          (subs > 1 ? " в " + subs + " " + Plural(subs, "подписке", "подписках", "подписках") : "");
+                    break;
+                case Page.Tunnels:
+                    PageHint.Text = "профиль «" + settings.Active.Name + "» · " + (settings.DefaultViaVpn ? "всё через VPN" : "только выбранное");
+                    break;
+                case Page.Subs:
+                    PageHint.Text = "Ctrl + V в любом месте окна — добавить ссылку из буфера";
+                    break;
+                default:
+                    PageHint.Text = "запуск, подключение, ссылки";
+                    break;
             }
         }
 
-        /// <summary>Панель не должна уехать за левый край экрана.</summary>
-        private void EnsureDrawerOnScreen()
+        private static string Plural(int n, string one, string few, string many)
         {
-            Rect work = CurrentWorkArea();
-            double drawerLeft = Left + ShadowPad;
-            double need = work.Left + 8 - drawerLeft;
-
-            if (need > 0)
-            {
-                drawerShiftApplied = need;
-                AnimateLeft(Left + need);
-            }
+            int m10 = n % 10;
+            int m100 = n % 100;
+            return m10 == 1 && m100 != 11 ? one : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? few : many;
         }
 
-        /// <summary>Рабочая область монитора, на котором окно, — в единицах WPF.</summary>
-        private Rect CurrentWorkArea()
-        {
-            try
-            {
-                IntPtr hwnd = new WindowInteropHelper(this).Handle;
-                System.Drawing.Rectangle r = System.Windows.Forms.Screen.FromHandle(hwnd).WorkingArea;
-                DpiScale dpi = VisualTreeHelper.GetDpi(this);
-                return new Rect(r.Left / dpi.DpiScaleX, r.Top / dpi.DpiScaleY, r.Width / dpi.DpiScaleX, r.Height / dpi.DpiScaleY);
-            }
-            catch
-            {
-                return SystemParameters.WorkArea;
-            }
-        }
-
-        private void AnimateLeft(double target)
-        {
-            animatingLeft = true;
-            var a = new DoubleAnimation(Left, target, TimeSpan.FromMilliseconds(240)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
-            a.Completed += (_, _) =>
-            {
-                // Сначала обычное значение, потом снимаем анимацию — так окно не дёргается.
-                Left = target;
-                BeginAnimation(LeftProperty, null);
-                animatingLeft = false;
-            };
-            BeginAnimation(LeftProperty, a);
-        }
-
-        // ================================================================== кнопки шапки
+        // ================================================================== кнопки окна
 
         private void OnMinimize(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
 
@@ -414,7 +512,7 @@ namespace VPN
         {
             if (settings.Topmost)
             {
-                PinButton.Foreground = (Brush)FindResource("Accent");
+                PinButton.Foreground = (Brush)FindResource("Accent2");
                 PinButton.ToolTip = "Открепить";
             }
             else
@@ -424,11 +522,73 @@ namespace VPN
             }
         }
 
+        // ================================================================== внешние ссылки и буфер обмена
+
+        /// <summary>Зарегистрировать свои ссылки shxvpn:// и, если можно, happ://.</summary>
+        private void RegisterLinkSchemes(bool force)
+        {
+            Task.Run(() =>
+            {
+                UrlScheme.Register(UrlScheme.Own, force: true);
+
+                if (settings.HandleHappLinks)
+                {
+                    UrlScheme.Register(UrlScheme.Happ, force);
+                }
+            });
+        }
+
+        /// <summary>Сообщение от второго запуска программы: показать окно и/или обработать ссылку.</summary>
+        public void OnExternalMessage(string message)
+        {
+            ShowFromTray();
+
+            if (!string.IsNullOrWhiteSpace(message) && message != "show")
+            {
+                _ = HandleExternalAsync(message);
+            }
+        }
+
+        /// <summary>В буфере ссылка, которую можно добавить, — предложим (один раз на каждую новую).</summary>
+        private void OfferClipboard()
+        {
+            if (!settings.WatchClipboard || loading)
+            {
+                return;
+            }
+
+            string text;
+
+            try
+            {
+                if (!Clipboard.ContainsText())
+                {
+                    return;
+                }
+
+                text = Clipboard.GetText().Trim();
+            }
+            catch
+            {
+                return;
+            }
+
+            if (text.Length == 0 || text == lastClipboardOffer || !LinkImport.LooksImportable(text) || AlreadyKnown(text))
+            {
+                return;
+            }
+
+            lastClipboardOffer = text;
+            string what = text.StartsWith("happ://routing", StringComparison.OrdinalIgnoreCase) ? "профиль маршрутизации"
+                : text.Contains("://") && !text.StartsWith("http", StringComparison.OrdinalIgnoreCase) && !text.StartsWith("happ://add", StringComparison.OrdinalIgnoreCase) ? "сервер"
+                : "подписку";
+            ShowToast("В буфере есть ссылка — добавить " + what + "?", ToastKind.Info, "Добавить", () => _ = ImportTextAsync(text));
+        }
+
         // ================================================================== трей
 
         private void HideToTray()
         {
-            CloseDrawer();
             SavePlacement();
             Hide();
 
@@ -473,11 +633,16 @@ namespace VPN
                 (_, _) => Dispatcher.BeginInvoke(new Action(async () => await ToggleAsync())));
             menu.Items.Add(trayToggle);
 
-            // Серверы прямо из трея: список собираем при каждом открытии — он мог поменяться.
+            // Серверы и профили прямо из трея: списки собираем при каждом открытии — они могли поменяться.
             trayServers = new System.Windows.Forms.ToolStripMenuItem("Сервер");
             trayServers.DropDownItems.Add("…");
             trayServers.DropDownOpening += (_, _) => FillTrayServers();
             menu.Items.Add(trayServers);
+
+            trayProfiles = new System.Windows.Forms.ToolStripMenuItem("Маршрутизация");
+            trayProfiles.DropDownItems.Add("…");
+            trayProfiles.DropDownOpening += (_, _) => FillTrayProfiles();
+            menu.Items.Add(trayProfiles);
 
             menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
             menu.Items.Add("Выход", null, (_, _) => Dispatcher.BeginInvoke(new Action(async () => await ExitAsync())));
@@ -521,14 +686,22 @@ namespace VPN
             List<ServerItem> list = servers.ToList();
             list.Sort(order.Compare);
             int shown = 0;
+            string lastGroup = null;
 
             foreach (ServerItem item in list)
             {
-                if (shown++ >= 60)
+                if (shown++ >= 80)
                 {
                     break;
                 }
 
+                if (item.Tag != "auto" && item.GroupKey != lastGroup && lastGroup != null)
+                {
+                    trayServers.DropDownItems.Add(new System.Windows.Forms.ToolStripSeparator());
+                    trayServers.DropDownItems.Add(new System.Windows.Forms.ToolStripMenuItem(item.GroupKey) { Enabled = false });
+                }
+
+                lastGroup = item.GroupKey;
                 string label = item.Tag == "auto"
                     ? "Самый быстрый (авто)"
                     : (item.IsFavorite ? "★ " : "") + item.Title + (item.PingText.Length > 0 && item.PingText != "…" ? "   " + item.PingText : "");
@@ -536,11 +709,19 @@ namespace VPN
                 var menuItem = new System.Windows.Forms.ToolStripMenuItem(label) { Checked = item.IsSelected };
                 menuItem.Click += (_, _) => Dispatcher.BeginInvoke(new Action(() => ChooseServer(target)));
                 trayServers.DropDownItems.Add(menuItem);
+            }
+        }
 
-                if (item.Tag == "auto")
-                {
-                    trayServers.DropDownItems.Add(new System.Windows.Forms.ToolStripSeparator());
-                }
+        private void FillTrayProfiles()
+        {
+            trayProfiles.DropDownItems.Clear();
+
+            foreach (RoutingProfile p in settings.Profiles)
+            {
+                RoutingProfile target = p;
+                var item = new System.Windows.Forms.ToolStripMenuItem(p.Name) { Checked = p.Id == settings.ActiveProfileId };
+                item.Click += (_, _) => Dispatcher.BeginInvoke(new Action(() => SwitchProfile(target)));
+                trayProfiles.DropDownItems.Add(item);
             }
         }
 
@@ -559,7 +740,7 @@ namespace VPN
                 using System.Drawing.Bitmap baseBitmap = baseIcon.ToBitmap();
                 var colors = new Dictionary<string, System.Drawing.Color>
                 {
-                    ["off"] = System.Drawing.Color.FromArgb(0x7A, 0x84, 0x99),
+                    ["off"] = System.Drawing.Color.FromArgb(0x8B, 0x6C, 0xFF),
                     ["on"] = System.Drawing.Color.FromArgb(0x3D, 0xDC, 0x97),
                     ["busy"] = System.Drawing.Color.FromArgb(0xFF, 0xB3, 0x47),
                     ["error"] = System.Drawing.Color.FromArgb(0xFF, 0x5C, 0x6C)
@@ -575,7 +756,7 @@ namespace VPN
                         g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
                         g.DrawImage(baseBitmap, 0, 0, 32, 32);
 
-                        using var outline = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(0x0D, 0x10, 0x15));
+                        using var outline = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(0x10, 0x13, 0x1B));
                         using var fill = new System.Drawing.SolidBrush(pair.Value);
                         g.FillEllipse(outline, 17, 17, 15, 15);
                         g.FillEllipse(fill, 19.5f, 19.5f, 10, 10);

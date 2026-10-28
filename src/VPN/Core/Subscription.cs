@@ -23,11 +23,11 @@ namespace VPN.Core
 
     /// <summary>
     /// Загружает подписку и превращает её в серверы sing-box. Понимает base64-список ссылок,
-    /// обычный список ссылок и JSON-конфиг sing-box. Ссылки: vless, vmess, trojan, ss, hysteria2/hy2, tuic.
+    /// обычный список ссылок и JSON-конфиг sing-box. Ссылки: vless, vmess, trojan, ss, hysteria2/hy2, tuic, socks.
     /// </summary>
     public static class Subscription
     {
-        private static readonly string[] Supported = { "vless", "vmess", "trojan", "shadowsocks", "hysteria2", "tuic", "anytls" };
+        private static readonly string[] Supported = { "vless", "vmess", "trojan", "shadowsocks", "hysteria2", "tuic", "anytls", "socks", "http" };
 
         public static async Task<SubscriptionResult> LoadAsync(string url)
         {
@@ -197,6 +197,7 @@ namespace VPN.Core
                 "ss" => Shadowsocks(line),
                 "hysteria2" or "hy2" => Hysteria2(line),
                 "tuic" => Tuic(line),
+                "socks" or "socks5" => Socks(line),
                 _ => null
             };
         }
@@ -449,6 +450,27 @@ namespace VPN.Core
 
             o["tls"] = tls;
             return Profile("tuic", l, o);
+        }
+
+        private static ServerProfile Socks(string line)
+        {
+            Link l = Split(line);
+            JsonObject o = new JsonObject { ["type"] = "socks", ["version"] = "5" };
+
+            if (l.User.Length > 0)
+            {
+                // socks://base64(user:pass)@host:port  или  socks5://user:pass@host:port
+                string user = l.User.Contains(':') ? l.User : TryBase64(l.User) ?? l.User;
+                string[] up = user.Split(':', 2);
+                o["username"] = up[0];
+
+                if (up.Length > 1)
+                {
+                    o["password"] = up[1];
+                }
+            }
+
+            return Profile("socks", l, o);
         }
 
         // ================================================================== общие куски
