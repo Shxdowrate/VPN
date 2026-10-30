@@ -188,13 +188,17 @@ namespace NeonVpn.Core
                 return;
             }
 
-            lock (lastLines)
+            // Для отчёта о падении храним только содержательные строки, без потока [Info] от Xray.
+            if (!line.Contains("[Info]") && !line.Contains("[Debug]") && !line.Contains("is deprecated"))
             {
-                lastLines.Enqueue(label + ": " + line);
-
-                while (lastLines.Count > 12)
+                lock (lastLines)
                 {
-                    lastLines.Dequeue();
+                    lastLines.Enqueue(label + ": " + line);
+
+                    while (lastLines.Count > 12)
+                    {
+                        lastLines.Dequeue();
+                    }
                 }
             }
 
