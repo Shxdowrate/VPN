@@ -34,6 +34,7 @@ namespace NeonVpn
         private double[] downHist = Array.Empty<double>(), upHist = Array.Empty<double>();
         private Color pingColor = Colors.Gray, lossColor = Colors.Gray;
 
+        public string Title { get; init; } = "";
         public string Down { get => down; set => Set(ref down, value); }
         public string Up { get => up; set => Set(ref up, value); }
         public string Ping { get => ping; set => Set(ref ping, value); }
@@ -55,7 +56,7 @@ namespace NeonVpn
             PingAvg = s.PingAvg == null ? "—" : s.PingAvg + " мс";
             Jitter = s.Jitter == null ? "—" : "±" + s.Jitter + " мс";
             Loss = s.Loss == null ? "—" : $"{s.Loss:0.#}%";
-            Total = "↓ " + Format.Size(s.TotalDown) + "   ↑ " + Format.Size(s.TotalUp);
+            Total = Format.Size(s.TotalDown + s.TotalUp) + " · " + s.Connections + " соед.";
             Conns = s.Connections.ToString();
             DownHist = s.DownHistory;
             UpHist = s.UpHistory;
@@ -68,14 +69,13 @@ namespace NeonVpn
 
     public static class Palette
     {
-        public static Color Accent = Color.FromRgb(0x76, 0xFF, 0x03);
-        public static Color Accent2 = Color.FromRgb(0x00, 0xE5, 0xFF);
-        public static readonly Color Good = Color.FromRgb(0x76, 0xFF, 0x03);
-        public static readonly Color Warn = Color.FromRgb(0xFF, 0xC4, 0x00);
-        public static readonly Color Bad = Color.FromRgb(0xFF, 0x1F, 0x4B);
-        public static readonly Color Dim = Color.FromRgb(0x7D, 0x8A, 0xA6);
-        public static readonly Color Off = Color.FromRgb(0x46, 0x50, 0x69);
-        public static readonly Color Magenta = Color.FromRgb(0xFF, 0x2B, 0xD6);
+        public static Color Accent = Color.FromRgb(0x3D, 0xDC, 0x84);
+        public static readonly Color Text = Color.FromRgb(0xEC, 0xED, 0xEF);
+        public static readonly Color Good = Color.FromRgb(0xEC, 0xED, 0xEF);
+        public static readonly Color Warn = Color.FromRgb(0xE5, 0xB4, 0x51);
+        public static readonly Color Bad = Color.FromRgb(0xEF, 0x5B, 0x5B);
+        public static readonly Color Dim = Color.FromRgb(0x8B, 0x90, 0x99);
+        public static readonly Color Off = Color.FromRgb(0x8B, 0x90, 0x99);
 
         public static Color ForPing(int? ms, bool measured = true) =>
             ms == null ? (measured ? Bad : Dim) : ms < 0 ? Bad : ms < 150 ? Good : ms < 350 ? Warn : Bad;
@@ -83,8 +83,7 @@ namespace NeonVpn
         public static Color ForState(VpnState s) => s switch
         {
             VpnState.On => Accent,
-            VpnState.Connecting or VpnState.Reconnecting => Accent2,
-            VpnState.Switching => Magenta,
+            VpnState.Connecting or VpnState.Reconnecting or VpnState.Switching => Text,
             VpnState.Error => Bad,
             _ => Off
         };
@@ -111,8 +110,8 @@ namespace NeonVpn
         private Color stateColor = Palette.Off;
         private bool busy, lit, pinnedBest, isAuto;
 
-        public PathVm Vpn { get; } = new PathVm();
-        public PathVm Direct { get; } = new PathVm();
+        public PathVm Vpn { get; } = new PathVm { Title = "Через VPN" };
+        public PathVm Direct { get; } = new PathVm { Title = "Напрямую" };
 
         public string StateText { get => stateText; set => Set(ref stateText, value); }
         public string Power { get => power; set => Set(ref power, value); }
@@ -227,7 +226,7 @@ namespace NeonVpn
         public Color ActionColor => Rule.Action switch
         {
             RouteAction.Vpn => Palette.Accent,
-            RouteAction.Direct => Palette.Accent2,
+            RouteAction.Direct => Palette.Dim,
             _ => Palette.Bad
         };
 

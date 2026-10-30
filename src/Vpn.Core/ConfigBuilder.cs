@@ -406,7 +406,8 @@ namespace NeonVpn.Core
 
             return new JsonObject
             {
-                ["log"] = new JsonObject { ["loglevel"] = "warning" },
+                // info — чтобы видеть, почему сервер не отвечает (CoreRunner вылавливает эти строки и отбрасывает остальное).
+                ["log"] = new JsonObject { ["loglevel"] = "info", ["access"] = "none" },
                 ["inbounds"] = inbounds,
                 ["outbounds"] = outbounds,
                 ["routing"] = new JsonObject { ["domainStrategy"] = "AsIs", ["rules"] = rules }

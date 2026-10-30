@@ -42,7 +42,7 @@ namespace NeonVpn.Views
                     return true;
                 }
 
-                if (d is NeonFrame || d is Window)
+                if (d is WindowFrame || d is Window)
                 {
                     return false;
                 }
@@ -93,14 +93,6 @@ namespace NeonVpn.Views
             w.Topmost = true;
             w.Topmost = false;
             w.Focus();
-        }
-
-        public static void Style(NeonFrame frame, Core.Settings s, Color stateColor, bool on)
-        {
-            frame.Shape = s.FrameShape;
-            frame.Intensity = s.Glow * (on ? 1.15 : 0.75);
-            frame.GlowColor = on ? Palette.Accent : stateColor == Palette.Off ? Palette.Accent : stateColor;
-            frame.GlowColor2 = Palette.Accent2;
         }
     }
 }

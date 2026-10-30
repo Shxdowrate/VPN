@@ -4,47 +4,37 @@ using System.Linq;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Media;
-using System.Windows.Media.Effects;
 using NeonVpn.Core;
 
 namespace NeonVpn
 {
-    /// <summary>Перекрашивает неон под выбранные цвета — на лету, без перезапуска.</summary>
+    /// <summary>Единственный настраиваемый цвет — акцент «включено». Меняется на лету.</summary>
     public static class Theme
     {
-        public static readonly (string name, string a, string b)[] Presets =
+        public static readonly (string name, string color)[] Presets =
         {
-            ("RTX", "#76FF03", "#00E5FF"),
-            ("Кибер", "#00E5FF", "#FF2BD6"),
-            ("Синтвейв", "#FF2BD6", "#7C4DFF"),
-            ("Плазма", "#7C4DFF", "#00E5FF"),
-            ("Лава", "#FF3D00", "#FFC400"),
-            ("Лёд", "#B3F5FF", "#2979FF"),
-            ("Токсик", "#C6FF00", "#00FFA3")
+            ("Зелёный", "#3DDC84"),
+            ("Синий", "#5B9DFF"),
+            ("Фиолетовый", "#A78BFA"),
+            ("Оранжевый", "#FF9F43"),
+            ("Белый", "#ECEDEF")
         };
 
         public static void Apply(Settings s)
         {
-            Color a = Palette.Parse(s.Accent, Color.FromRgb(0x76, 0xFF, 0x03));
-            Color b = Palette.Parse(s.Accent2, Color.FromRgb(0x00, 0xE5, 0xFF));
-            double k = Math.Max(0.3, Math.Min(1.6, s.Glow));
+            // Цвета прошлого (неонового) оформления сбрасываем на зелёный по умолчанию.
+            if (Presets.All(p => !string.Equals(p.color, s.Accent, StringComparison.OrdinalIgnoreCase)))
+            {
+                s.Accent = Presets[0].color;
+            }
+
+            Color a = Palette.Parse(s.Accent, Color.FromRgb(0x3D, 0xDC, 0x84));
             ResourceDictionary r = Application.Current.Resources;
 
             Palette.Accent = a;
-            Palette.Accent2 = b;
             r["AccentColor"] = a;
-            r["Accent2Color"] = b;
             r["Accent"] = Freeze(new SolidColorBrush(a));
-            r["Accent2"] = Freeze(new SolidColorBrush(b));
-            r["AccentSoft"] = Freeze(new SolidColorBrush(Color.FromArgb(0x22, a.R, a.G, a.B)));
-            r["Accent2Soft"] = Freeze(new SolidColorBrush(Color.FromArgb(0x22, b.R, b.G, b.B)));
-            r["GlowAccent"] = Freeze(new DropShadowEffect { Color = a, BlurRadius = 18 * k, ShadowDepth = 0, Opacity = Math.Min(1, 0.9 * k) });
-            r["GlowAccent2"] = Freeze(new DropShadowEffect { Color = b, BlurRadius = 18 * k, ShadowDepth = 0, Opacity = Math.Min(1, 0.9 * k) });
-            r["GlowSoft"] = Freeze(new DropShadowEffect { Color = a, BlurRadius = 10 * k, ShadowDepth = 0, Opacity = Math.Min(1, 0.55 * k) });
-
-            // Тёмный текст на кнопке-заливке, если акцент светлый, иначе белый.
-            double lum = (0.299 * a.R + 0.587 * a.G + 0.114 * a.B) / 255;
-            r["OnAccent"] = Freeze(new SolidColorBrush(lum > 0.55 ? Color.FromRgb(0x04, 0x06, 0x0A) : Colors.White));
+            r["AccentSoft"] = Freeze(new SolidColorBrush(Color.FromArgb(0x16, a.R, a.G, a.B)));
         }
 
         private static T Freeze<T>(T f) where T : Freezable

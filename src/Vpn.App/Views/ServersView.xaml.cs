@@ -453,7 +453,7 @@ namespace NeonVpn.Views
         private void NewGroup(List<ServerVm> sel)
         {
             string name = InputDialog.AskOne(Owner, "Новая группа", sel.Count > 0 ? $"Выделенные серверы ({sel.Count}) попадут в неё." : "Потом добавляй серверы правой кнопкой → «В группу».",
-                "", "Например: Игры, Европа, Быстрые", "СОЗДАТЬ");
+                "", "Например: Игры, Европа, Быстрые", "Создать");
 
             if (string.IsNullOrWhiteSpace(name))
             {
@@ -486,7 +486,7 @@ namespace NeonVpn.Views
                 // буфер недоступен
             }
 
-            string[] r = InputDialog.Ask(Owner, "Новая подписка", "Ссылка от провайдера (https://…). Имя можно оставить пустым — возьму из подписки.", "ДОБАВИТЬ",
+            string[] r = InputDialog.Ask(Owner, "Новая подписка", "Ссылка от провайдера (https://…). Имя можно оставить пустым — возьму из подписки.", "Добавить",
                 new InputDialog.Field { Label = "Ссылка", Value = clip, Placeholder = "https://panel.example.com/sub/…" },
                 new InputDialog.Field { Label = "Имя", Placeholder = "необязательно" });
 
@@ -538,7 +538,7 @@ namespace NeonVpn.Views
                 // буфер недоступен
             }
 
-            string text = InputDialog.Ask(Owner, "Добавить серверы ссылками", "По одной в строке: vless://, vmess://, trojan://, ss://, hysteria2://, tuic://, socks://", "ДОБАВИТЬ",
+            string text = InputDialog.Ask(Owner, "Добавить серверы ссылками", "По одной в строке: vless://, vmess://, trojan://, ss://, hysteria2://, tuic://, socks://", "Добавить",
                 new InputDialog.Field { Value = clip, Multiline = true, Placeholder = "vless://…" })?.FirstOrDefault();
 
             if (!string.IsNullOrWhiteSpace(text))
@@ -672,7 +672,7 @@ namespace NeonVpn.Views
                 menu.Items.Add(new Separator());
                 menu.Items.Add(Item("Удалить подписку", () =>
                 {
-                    if (!InputDialog.Confirm(Owner, "Удалить «" + sub.Name + "»?", "Серверы подписки пропадут и из групп.", "УДАЛИТЬ")) return;
+                    if (!InputDialog.Confirm(Owner, "Удалить «" + sub.Name + "»?", "Серверы подписки пропадут и из групп.", "Удалить")) return;
 
                     S.Subscriptions.Remove(sub);
                     Subscriptions.PruneGroups(S);
@@ -701,7 +701,7 @@ namespace NeonVpn.Views
                 }));
                 menu.Items.Add(Item("Удалить группу", () =>
                 {
-                    if (!InputDialog.Confirm(Owner, "Удалить группу «" + g.Name + "»?", "Сами серверы останутся в подписках.", "УДАЛИТЬ")) return;
+                    if (!InputDialog.Confirm(Owner, "Удалить группу «" + g.Name + "»?", "Сами серверы останутся в подписках.", "Удалить")) return;
 
                     S.Groups.Remove(g);
 

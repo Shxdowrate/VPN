@@ -3,110 +3,63 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:c="clr-namespace:NeonVpn.Controls"
         xmlns:v="clr-namespace:NeonVpn.Views"
-        Title="Neon VPN" Width="1040" Height="680" MinWidth="900" MinHeight="600"
+        Title="VPN" Width="920" Height="620" MinWidth="780" MinHeight="540"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent" ResizeMode="CanResize"
         FontFamily="{StaticResource Body}" Foreground="{DynamicResource Text}"
         UseLayoutRounding="True" TextOptions.TextFormattingMode="Display" Icon="/Assets/app.ico">
 
     <WindowChrome.WindowChrome>
-        <WindowChrome CaptionHeight="0" ResizeBorderThickness="12" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False"/>
+        <WindowChrome CaptionHeight="0" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False"/>
     </WindowChrome.WindowChrome>
 
-    <Grid x:Name="Root">
-        <c:NeonFrame x:Name="Frame"/>
-
-        <!-- Всё содержимое — внутри силуэта: отступы учитывают срезы и ступеньки рамки. -->
-        <Grid Margin="22,14,24,22">
+    <c:WindowFrame x:Name="Root">
+        <Grid>
             <Grid.RowDefinitions>
-                <RowDefinition Height="54"/>
+                <RowDefinition Height="52"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <!-- ===== Заголовок: «вкладка» слева выше, кнопки справа на ступеньке ===== -->
-            <Grid Grid.Row="0">
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
-                    <Grid Width="30" Height="30" Margin="0,0,10,0">
-                        <Ellipse Stroke="{DynamicResource Accent}" StrokeThickness="2" Effect="{DynamicResource GlowAccent}"/>
-                        <TextBlock Text="&#xE7E8;" Style="{StaticResource Icon}" FontSize="13" Foreground="{DynamicResource Accent}"/>
-                    </Grid>
-                    <TextBlock Text="NEON" FontFamily="{StaticResource Display}" FontSize="19" FontWeight="Bold" Foreground="{DynamicResource Accent}"
-                               VerticalAlignment="Center" Effect="{DynamicResource GlowSoft}"/>
-                    <TextBlock Text="VPN" FontFamily="{StaticResource Display}" FontSize="19" FontWeight="Light" Margin="5,0,16,0" VerticalAlignment="Center"/>
-                    <Border BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="2,7,2,7" Padding="8,2" VerticalAlignment="Center" Margin="0,0,6,0">
-                        <TextBlock Text="{Binding CoreText}" Style="{StaticResource Caps}" Foreground="{DynamicResource Accent2}" FontSize="11"/>
-                    </Border>
-                    <Border BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="2,7,2,7" Padding="8,2" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding ModeText}" Style="{StaticResource Caps}" FontSize="11"/>
-                    </Border>
-                </StackPanel>
-
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,12,4,0">
-                    <Ellipse Width="8" Height="8" Margin="0,0,8,0" VerticalAlignment="Center">
+            <!-- Шапка: состояние, вкладки, кнопки окна. Тянуть окно — за пустое место. -->
+            <Grid Grid.Row="0" Margin="22,0,10,0">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Ellipse Width="8" Height="8" VerticalAlignment="Center" Margin="0,0,10,0">
                         <Ellipse.Fill>
                             <SolidColorBrush Color="{Binding StateColor}"/>
                         </Ellipse.Fill>
                     </Ellipse>
-                    <TextBlock Text="{Binding StateText}" Style="{StaticResource Caps}" FontSize="11.5" VerticalAlignment="Center" Margin="0,0,16,0"
-                               MaxWidth="260" TextTrimming="CharacterEllipsis"/>
-                    <Button x:Name="MiniButton" Style="{StaticResource IconButton}" Content="&#xE73F;" ToolTip="Мини-окно" Click="OnMini"/>
+                    <TextBlock Text="VPN" FontFamily="{StaticResource Display}" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,32,0"/>
+
+                    <RadioButton x:Name="NavHome" Style="{StaticResource Tab}" Content="Главная" IsChecked="True" Checked="OnNav" GroupName="nav" Height="28"/>
+                    <RadioButton x:Name="NavServers" Style="{StaticResource Tab}" Content="Серверы" Checked="OnNav" GroupName="nav" Height="28"/>
+                    <RadioButton x:Name="NavTunnels" Style="{StaticResource Tab}" Content="Туннели" Checked="OnNav" GroupName="nav" Height="28"/>
+                    <RadioButton x:Name="NavSettings" Style="{StaticResource Tab}" Content="Настройки" Checked="OnNav" GroupName="nav" Height="28"/>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Button Style="{StaticResource IconButton}" Content="&#xE73F;" ToolTip="Мини-окно" Click="OnMini"/>
                     <Button Style="{StaticResource IconButton}" Content="&#xE921;" ToolTip="Свернуть" Click="OnMinimize"/>
                     <Button Style="{StaticResource CloseButton}" Content="&#xE8BB;" ToolTip="Скрыть в трей" Click="OnClose"/>
                 </StackPanel>
             </Grid>
 
-            <Grid Grid.Row="1">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="74"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
+            <Border Grid.Row="0" Height="1" VerticalAlignment="Bottom" Background="{DynamicResource Line}"/>
 
-                <!-- ===== Навигация ===== -->
-                <StackPanel Grid.Column="0" Margin="0,8,0,0">
-                    <RadioButton x:Name="NavHome" Style="{StaticResource Nav}" Tag="ГЛАВНАЯ" IsChecked="True" Checked="OnNav" GroupName="nav">
-                        <TextBlock Text="&#xE80F;" Style="{StaticResource Icon}" FontSize="19"/>
-                    </RadioButton>
-                    <RadioButton x:Name="NavServers" Style="{StaticResource Nav}" Tag="СЕРВЕРЫ" Checked="OnNav" GroupName="nav">
-                        <TextBlock Text="&#xE774;" Style="{StaticResource Icon}" FontSize="19"/>
-                    </RadioButton>
-                    <RadioButton x:Name="NavTunnels" Style="{StaticResource Nav}" Tag="ТУННЕЛИ" Checked="OnNav" GroupName="nav">
-                        <TextBlock Text="&#xE8AB;" Style="{StaticResource Icon}" FontSize="19"/>
-                    </RadioButton>
-                    <RadioButton x:Name="NavSettings" Style="{StaticResource Nav}" Tag="НАСТРОЙКИ" Checked="OnNav" GroupName="nav">
-                        <TextBlock Text="&#xE713;" Style="{StaticResource Icon}" FontSize="19"/>
-                    </RadioButton>
-                </StackPanel>
-
-                <Border Grid.Column="0" Width="1" HorizontalAlignment="Right" Margin="0,8,0,40">
-                    <Border.Background>
-                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                            <GradientStop Color="#00000000" Offset="0"/>
-                            <GradientStop Color="#331C2335" Offset="0.2"/>
-                            <GradientStop Color="#FF1C2335" Offset="0.5"/>
-                            <GradientStop Color="#00000000" Offset="1"/>
-                        </LinearGradientBrush>
-                    </Border.Background>
-                </Border>
-
-                <Grid Grid.Column="1" Margin="18,6,0,0">
-                    <v:HomeView x:Name="Home"/>
-                    <v:ServersView x:Name="ServersPage" Visibility="Collapsed"/>
-                    <v:TunnelsView x:Name="Tunnels" Visibility="Collapsed"/>
-                    <v:SettingsView x:Name="SettingsPage" Visibility="Collapsed"/>
-                </Grid>
+            <Grid Grid.Row="1" Margin="24,18,24,20">
+                <v:HomeView x:Name="Home"/>
+                <v:ServersView x:Name="ServersPage" Visibility="Collapsed"/>
+                <v:TunnelsView x:Name="Tunnels" Visibility="Collapsed"/>
+                <v:SettingsView x:Name="SettingsPage" Visibility="Collapsed"/>
             </Grid>
-        </Grid>
 
-        <!-- ===== Всплывающее сообщение ===== -->
-        <Border x:Name="ToastBox" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,46" Padding="16,10" MaxWidth="620"
-                CornerRadius="2,12,2,12" Background="{DynamicResource PanelSolid}" BorderThickness="1" BorderBrush="{DynamicResource Accent2}"
-                Opacity="0" IsHitTestVisible="False">
-            <Border.Effect>
-                <DropShadowEffect x:Name="ToastGlow" Color="#00E5FF" BlurRadius="20" ShadowDepth="0" Opacity="0.6"/>
-            </Border.Effect>
-            <StackPanel Orientation="Horizontal">
-                <TextBlock x:Name="ToastIcon" Text="&#xE946;" Style="{StaticResource Icon}" Foreground="{DynamicResource Accent2}" Margin="0,0,10,0"/>
-                <TextBlock x:Name="ToastText" Style="{StaticResource BodyText}" VerticalAlignment="Center" MaxWidth="560"/>
-            </StackPanel>
-        </Border>
-    </Grid>
+            <!-- Сообщение снизу -->
+            <Border x:Name="ToastBox" Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,18" Padding="14,9" MaxWidth="600"
+                    CornerRadius="8" Background="{DynamicResource Panel2}" BorderThickness="1" BorderBrush="{DynamicResource Line}"
+                    Opacity="0" IsHitTestVisible="False">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock x:Name="ToastIcon" Text="&#xE946;" Style="{StaticResource Icon}" FontSize="13" Foreground="{DynamicResource Dim}" Margin="0,0,10,0"/>
+                    <TextBlock x:Name="ToastText" Style="{StaticResource BodyText}" FontSize="12.5" VerticalAlignment="Center" MaxWidth="540"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </c:WindowFrame>
 </Window>

@@ -25,54 +25,41 @@ namespace NeonVpn.Views
 
             foreach (int m in new[] { 2, 5, 10, 30 })
             {
-                RadioButton r = new RadioButton { Content = m + " МИН", Tag = m, GroupName = "interval", Style = (Style)FindResource("RadioChip") };
+                RadioButton r = new RadioButton { Content = m + " мин", Tag = m, GroupName = "interval", Style = (Style)FindResource("RadioChip") };
                 r.Click += (_, _) => { S.AutoCheckMinutes = m; Save(false); };
                 Intervals.Children.Add(r);
             }
 
             foreach (int ms in new[] { 30, 60, 120, 250 })
             {
-                RadioButton r = new RadioButton { Content = ms + " МС", Tag = ms, GroupName = "tol", Style = (Style)FindResource("RadioChip") };
+                RadioButton r = new RadioButton { Content = ms + " мс", Tag = ms, GroupName = "tol", Style = (Style)FindResource("RadioChip") };
                 r.Click += (_, _) => { S.AutoTolerance = ms; Save(false); };
                 Tolerances.Children.Add(r);
             }
 
-            foreach (var (name, a, b) in Theme.Presets)
+            foreach (var (name, color) in Theme.Presets)
             {
-                ColorPanel.Children.Add(Swatch(name, a, b));
+                ColorPanel.Children.Add(Swatch(name, color));
             }
 
             VersionText.Text = "Neon VPN " + typeof(App).Assembly.GetName().Version?.ToString(3) + " · данные: " + Paths.Data;
         }
 
-        /// <summary>Образец цвета: два светящихся кружка и имя.</summary>
-        private ToggleButton Swatch(string name, string a, string b)
+        /// <summary>Образец цвета: кружок и имя.</summary>
+        private ToggleButton Swatch(string name, string color)
         {
-            Color ca = Palette.Parse(a, Colors.Lime);
-            Color cb = Palette.Parse(b, Colors.Cyan);
             StackPanel content = new StackPanel { Orientation = Orientation.Horizontal };
-            content.Children.Add(Dot(ca));
-            content.Children.Add(Dot(cb));
-            content.Children.Add(new TextBlock { Text = name.ToUpperInvariant(), Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
+            content.Children.Add(new Ellipse { Width = 10, Height = 10, Fill = new SolidColorBrush(Palette.Parse(color, Colors.White)), VerticalAlignment = VerticalAlignment.Center });
+            content.Children.Add(new TextBlock { Text = name, Margin = new Thickness(7, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
 
-            ToggleButton t = new ToggleButton { Content = content, Tag = a + "|" + b, Style = (Style)FindResource("Chip") };
+            ToggleButton t = new ToggleButton { Content = content, Tag = color, Style = (Style)FindResource("Chip") };
             t.Click += (_, _) =>
             {
-                S.Accent = a;
-                S.Accent2 = b;
+                S.Accent = color;
                 ApplyLook();
             };
             return t;
         }
-
-        private static Ellipse Dot(Color c) => new Ellipse
-        {
-            Width = 10,
-            Height = 10,
-            Margin = new Thickness(0, 0, 3, 0),
-            Fill = new SolidColorBrush(c),
-            Effect = new System.Windows.Media.Effects.DropShadowEffect { Color = c, BlurRadius = 8, ShadowDepth = 0, Opacity = 0.9 }
-        };
 
         public void Reload()
         {
@@ -90,20 +77,10 @@ namespace NeonVpn.Views
             AutostartBox.IsChecked = S.Autostart;
             AutoConnect.IsChecked = S.ConnectOnLaunch;
             StartHidden.IsChecked = S.StartMinimized;
-            Anim.IsChecked = S.Animations;
 
             foreach (RadioButton r in Intervals.Children.OfType<RadioButton>()) r.IsChecked = (int)r.Tag == S.AutoCheckMinutes;
             foreach (RadioButton r in Tolerances.Children.OfType<RadioButton>()) r.IsChecked = (int)r.Tag == S.AutoTolerance;
-            foreach (ToggleButton t in ColorPanel.Children.OfType<ToggleButton>()) t.IsChecked = (string)t.Tag == S.Accent + "|" + S.Accent2;
-
-            ShapeBlade.IsChecked = S.FrameShape == "Blade";
-            ShapeShard.IsChecked = S.FrameShape == "Shard";
-            ShapeCapsule.IsChecked = S.FrameShape == "Capsule";
-
-            foreach (RadioButton r in new[] { Glow1, Glow2, Glow3, Glow4 })
-            {
-                r.IsChecked = Math.Abs(double.Parse((string)r.Tag, CultureInfo.InvariantCulture) - S.Glow) < 0.05;
-            }
+            foreach (ToggleButton t in ColorPanel.Children.OfType<ToggleButton>()) t.IsChecked = string.Equals((string)t.Tag, S.Accent, StringComparison.OrdinalIgnoreCase);
 
             bool hasXray = File.Exists(Paths.Xray);
             bool hasSing = File.Exists(Paths.SingBox);
@@ -188,19 +165,6 @@ namespace NeonVpn.Views
             S.ConnectOnLaunch = AutoConnect.IsChecked == true;
             S.StartMinimized = StartHidden.IsChecked == true;
             Save(reconnect);
-        }
-
-        private void OnLook(object sender, RoutedEventArgs e)
-        {
-            if (loading)
-            {
-                return;
-            }
-
-            if (sender is RadioButton r && r.GroupName == "shape") S.FrameShape = (string)r.Tag;
-            if (sender is RadioButton g && g.GroupName == "glow") S.Glow = double.Parse((string)g.Tag, CultureInfo.InvariantCulture);
-            S.Animations = Anim.IsChecked == true;
-            ApplyLook();
         }
 
         private void ApplyLook()

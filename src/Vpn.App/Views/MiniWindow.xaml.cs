@@ -24,32 +24,21 @@ namespace NeonVpn.Views
                 }
             };
 
-            ApplyLook();
         }
 
         public void ShowAndActivate() => WindowKit.ShowAndActivate(this);
 
         public void ApplyLook()
         {
-            WindowKit.Style(Frame, App.Vpn.Settings, App.Vm.StateColor, App.Vpn.State == VpnState.On);
-            Frame.StartRunning(App.Vpn.Settings.Animations);
         }
 
         public void OnStateChanged(VpnState before, VpnState now)
         {
-            ApplyLook();
-
-            if (now == VpnState.On && before != VpnState.On)
-            {
-                Frame.Pulse();
-            }
         }
 
         private async void OnPower(object sender, RoutedEventArgs e) => await App.Vpn.ToggleAsync();
 
         private void OnExpand(object sender, RoutedEventArgs e) => App.ShowMain();
-
-        private void OnMinimize(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
 
         private void OnClose(object sender, RoutedEventArgs e)
         {

@@ -43,10 +43,10 @@ namespace NeonVpn.Services
         {
             Color c = vpn.State switch
             {
-                VpnState.On => Hex(vpn.Settings.Accent, Color.FromArgb(0x76, 0xFF, 0x03)),
-                VpnState.Connecting or VpnState.Reconnecting or VpnState.Switching => Hex(vpn.Settings.Accent2, Color.FromArgb(0x00, 0xE5, 0xFF)),
-                VpnState.Error => Color.FromArgb(0xFF, 0x1F, 0x4B),
-                _ => Color.FromArgb(0x5A, 0x64, 0x80)
+                VpnState.On => Hex(vpn.Settings.Accent, Color.FromArgb(0x3D, 0xDC, 0x84)),
+                VpnState.Connecting or VpnState.Reconnecting or VpnState.Switching => Color.FromArgb(0xEC, 0xED, 0xEF),
+                VpnState.Error => Color.FromArgb(0xEF, 0x5B, 0x5B),
+                _ => Color.FromArgb(0x8B, 0x90, 0x99)
             };
 
             icon.Icon = Ring(c);
@@ -149,11 +149,6 @@ namespace NeonVpn.Services
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.Clear(Color.Transparent);
 
-                using (SolidBrush glow = new SolidBrush(Color.FromArgb(70, c)))
-                {
-                    g.FillEllipse(glow, 0, 0, 31, 31);
-                }
-
                 using (SolidBrush bg = new SolidBrush(Color.FromArgb(255, 8, 10, 17)))
                 {
                     g.FillEllipse(bg, 3, 3, 25, 25);
@@ -202,19 +197,19 @@ namespace NeonVpn.Services
 
             protected override void OnRenderItemText(WF.ToolStripItemTextRenderEventArgs e)
             {
-                e.TextColor = e.Item.Enabled ? (e.Item.Selected ? Color.FromArgb(0x00, 0xE5, 0xFF) : Color.FromArgb(0xE9, 0xF2, 0xFF)) : Color.FromArgb(0x7D, 0x8A, 0xA6);
+                e.TextColor = e.Item.Enabled ? (e.Item.Selected ? Color.FromArgb(0xFF, 0xFF, 0xFF) : Color.FromArgb(0xEC, 0xED, 0xEF)) : Color.FromArgb(0x8B, 0x90, 0x99);
                 base.OnRenderItemText(e);
             }
 
             protected override void OnRenderArrow(WF.ToolStripArrowRenderEventArgs e)
             {
-                e.ArrowColor = Color.FromArgb(0x7D, 0x8A, 0xA6);
+                e.ArrowColor = Color.FromArgb(0x8B, 0x90, 0x99);
                 base.OnRenderArrow(e);
             }
 
             protected override void OnRenderItemCheck(WF.ToolStripItemImageRenderEventArgs e)
             {
-                using SolidBrush b = new SolidBrush(Color.FromArgb(0x76, 0xFF, 0x03));
+                using SolidBrush b = new SolidBrush(Color.FromArgb(0xEC, 0xED, 0xEF));
                 Rectangle r = e.ImageRectangle;
                 e.Graphics.FillEllipse(b, r.X + r.Width / 2 - 3, r.Y + r.Height / 2 - 3, 6, 6);
             }
@@ -222,9 +217,9 @@ namespace NeonVpn.Services
 
         private sealed class DarkColors : WF.ProfessionalColorTable
         {
-            private static readonly Color Bg = Color.FromArgb(0x0B, 0x0E, 0x16);
-            private static readonly Color Hi = Color.FromArgb(0x13, 0x22, 0x2C);
-            private static readonly Color Border = Color.FromArgb(0x1C, 0x23, 0x35);
+            private static readonly Color Bg = Color.FromArgb(0x16, 0x17, 0x1A);
+            private static readonly Color Hi = Color.FromArgb(0x22, 0x24, 0x29);
+            private static readonly Color Border = Color.FromArgb(0x26, 0x28, 0x2E);
 
             public override Color ToolStripDropDownBackground => Bg;
             public override Color ImageMarginGradientBegin => Bg;

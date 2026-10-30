@@ -5,7 +5,7 @@ using System.Windows.Media;
 
 namespace NeonVpn.Controls
 {
-    /// <summary>Светящийся график скорости: загрузка — сплошной заливкой, отдача — тонкой линией.</summary>
+    /// <summary>График скорости: загрузка — линия с лёгкой заливкой, отдача — бледная линия.</summary>
     public sealed class Sparkline : FrameworkElement
     {
         public static readonly DependencyProperty DownProperty =
@@ -57,7 +57,7 @@ namespace NeonVpn.Controls
             }
 
             // Едва заметная сетка.
-            Pen grid = new Pen(new SolidColorBrush(Color.FromArgb(22, 0x9A, 0xB4, 0xE0)), 1);
+            Pen grid = new Pen(new SolidColorBrush(Color.FromArgb(14, 0xFF, 0xFF, 0xFF)), 1);
             grid.Freeze();
 
             for (int i = 1; i < 4; i++)
@@ -114,20 +114,12 @@ namespace NeonVpn.Controls
 
             if (filled)
             {
-                LinearGradientBrush fillBrush = new LinearGradientBrush(Color.FromArgb(90, c.R, c.G, c.B), Color.FromArgb(0, c.R, c.G, c.B), 90);
+                SolidColorBrush fillBrush = new SolidColorBrush(Color.FromArgb(22, c.R, c.G, c.B));
                 fillBrush.Freeze();
                 dc.DrawGeometry(fillBrush, null, area);
             }
 
-            // Свечение: несколько полупрозрачных обводок, потом яркая сердцевина.
-            foreach ((double t, byte alpha) in new[] { (7.0, (byte)18), (4.0, (byte)40), (2.2, (byte)90) })
-            {
-                Pen glow = new Pen(new SolidColorBrush(Color.FromArgb(alpha, c.R, c.G, c.B)), t) { LineJoin = PenLineJoin.Round };
-                glow.Freeze();
-                dc.DrawGeometry(null, glow, line);
-            }
-
-            Pen core = new Pen(new SolidColorBrush(c), filled ? 1.4 : 1.1) { LineJoin = PenLineJoin.Round };
+            Pen core = new Pen(new SolidColorBrush(Color.FromArgb(filled ? (byte)230 : (byte)140, c.R, c.G, c.B)), 1.2) { LineJoin = PenLineJoin.Round };
             core.Freeze();
             dc.DrawGeometry(null, core, line);
         }

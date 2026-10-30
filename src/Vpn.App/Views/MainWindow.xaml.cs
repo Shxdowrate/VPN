@@ -41,32 +41,33 @@ namespace NeonVpn.Views
 
         public void ShowAndActivate() => WindowKit.ShowAndActivate(this);
 
-        /// <summary>Цвета, форма и анимации рамки — из настроек и состояния.</summary>
+        /// <summary>Открыть вкладку по имени (home, servers, tunnels, settings) — для запуска с --page=…</summary>
+        public void GoTo(string page)
+        {
+            switch (page)
+            {
+                case "servers": NavServers.IsChecked = true; break;
+                case "tunnels": NavTunnels.IsChecked = true; break;
+                case "settings": NavSettings.IsChecked = true; break;
+                default: NavHome.IsChecked = true; break;
+            }
+        }
+
+        /// <summary>Оформление меняется только через ресурсы темы — здесь нечего перекрашивать.</summary>
         public void ApplyLook()
         {
-            WindowKit.Style(Frame, App.Vpn.Settings, App.Vm.StateColor, App.Vpn.State == VpnState.On);
-            Frame.StartRunning(App.Vpn.Settings.Animations);
         }
 
         public void OnStateChanged(VpnState before, VpnState now)
         {
-            ApplyLook();
             Home.OnStateChanged();
-
-            if (now == VpnState.On && before != VpnState.On)
-            {
-                Frame.Pulse();
-            }
         }
 
         public void Toast(string text, bool error)
         {
             ToastText.Text = text;
-            Color c = error ? Palette.Bad : Palette.Accent2;
-            ToastBox.BorderBrush = new SolidColorBrush(c);
-            ToastIcon.Foreground = new SolidColorBrush(c);
-            ToastIcon.Text = error ? "" : "";
-            ToastGlow.Color = c;
+            ToastIcon.Foreground = new SolidColorBrush(error ? Palette.Bad : Palette.Dim);
+            ToastIcon.Text = error ? "\uE7BA" : "\uE946";
             ToastBox.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(200)));
             toastTimer.Stop();
             toastTimer.Interval = TimeSpan.FromSeconds(error ? 7 : 4.5);
@@ -90,7 +91,7 @@ namespace NeonVpn.Views
             if (NavSettings.IsChecked == true) SettingsPage.Reload();
 
             FrameworkElement shown = NavHome.IsChecked == true ? Home : NavServers.IsChecked == true ? ServersPage : NavTunnels.IsChecked == true ? Tunnels : SettingsPage;
-            shown.BeginAnimation(OpacityProperty, new DoubleAnimation(0.2, 1, TimeSpan.FromMilliseconds(220)));
+            shown.BeginAnimation(OpacityProperty, new DoubleAnimation(0.4, 1, TimeSpan.FromMilliseconds(150)));
         }
 
         private void OnMini(object sender, RoutedEventArgs e) => App.ShowMini();

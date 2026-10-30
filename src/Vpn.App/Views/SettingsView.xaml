@@ -13,10 +13,10 @@
                 <!-- Ядро -->
                 <Border Style="{StaticResource Card}" Margin="0,0,0,14">
                     <StackPanel>
-                        <TextBlock Text="ЯДРО" Style="{StaticResource Caps}" FontSize="12" Foreground="{DynamicResource Accent}" Margin="0,0,0,8"/>
+                        <TextBlock Text="Ядро" Style="{StaticResource H2}" Margin="0,0,0,8"/>
                         <WrapPanel>
-                            <RadioButton x:Name="CoreSing" Style="{StaticResource RadioChip}" GroupName="core" Click="OnCore">SING-BOX</RadioButton>
-                            <RadioButton x:Name="CoreXray" Style="{StaticResource RadioChip}" GroupName="core" Click="OnCore">XRAY</RadioButton>
+                            <RadioButton x:Name="CoreSing" Style="{StaticResource RadioChip}" GroupName="core" Click="OnCore">sing-box</RadioButton>
+                            <RadioButton x:Name="CoreXray" Style="{StaticResource RadioChip}" GroupName="core" Click="OnCore">Xray</RadioButton>
                         </WrapPanel>
                         <TextBlock x:Name="CoreHint" Style="{StaticResource Hint}" FontSize="11.5" Margin="0,2,0,8"/>
                         <CheckBox x:Name="Fragment" Click="OnChanged">
@@ -29,7 +29,7 @@
                 <!-- Режим -->
                 <Border Style="{StaticResource Card}" Margin="0,0,0,14">
                     <StackPanel>
-                        <TextBlock Text="РЕЖИМ" Style="{StaticResource Caps}" FontSize="12" Foreground="{DynamicResource Accent}" Margin="0,0,0,8"/>
+                        <TextBlock Text="Режим" Style="{StaticResource H2}" Margin="0,0,0,8"/>
                         <CheckBox x:Name="Tun" Click="OnChanged">
                             <TextBlock Style="{StaticResource BodyText}">TUN — виртуальный адаптер<LineBreak/><Run Foreground="{DynamicResource Dim}" FontSize="11.5">весь трафик системы: игры, мессенджеры, всё</Run></TextBlock>
                         </CheckBox>
@@ -49,7 +49,7 @@
                 <!-- Авто -->
                 <Border Style="{StaticResource Card}" Margin="0,0,0,14">
                     <StackPanel>
-                        <TextBlock Text="АВТО-ВЫБОР" Style="{StaticResource Caps}" FontSize="12" Foreground="{DynamicResource Accent}" Margin="0,0,0,8"/>
+                        <TextBlock Text="Авто-выбор" Style="{StaticResource H2}" Margin="0,0,0,8"/>
                         <TextBlock Text="Перепроверять серверы" Style="{StaticResource Hint}" Margin="0,0,0,4"/>
                         <WrapPanel x:Name="Intervals"/>
                         <TextBlock Text="Переходить, если новый быстрее хотя бы на" Style="{StaticResource Hint}" Margin="0,6,0,4"/>
@@ -66,31 +66,15 @@
                 <!-- Вид -->
                 <Border Style="{StaticResource Card}" Margin="0,0,0,14">
                     <StackPanel>
-                        <TextBlock Text="СВЕЧЕНИЕ" Style="{StaticResource Caps}" FontSize="12" Foreground="{DynamicResource Accent}" Margin="0,0,0,8"/>
+                        <TextBlock Text="Цвет «включено»" Style="{StaticResource H2}" Margin="0,0,0,10"/>
                         <WrapPanel x:Name="ColorPanel"/>
-                        <TextBlock Text="Силуэт окна" Style="{StaticResource Hint}" Margin="0,8,0,4"/>
-                        <WrapPanel>
-                            <RadioButton x:Name="ShapeBlade" Style="{StaticResource RadioChip}" GroupName="shape" Click="OnLook" Tag="Blade">КЛИНОК</RadioButton>
-                            <RadioButton x:Name="ShapeShard" Style="{StaticResource RadioChip}" GroupName="shape" Click="OnLook" Tag="Shard">ОСКОЛОК</RadioButton>
-                            <RadioButton x:Name="ShapeCapsule" Style="{StaticResource RadioChip}" GroupName="shape" Click="OnLook" Tag="Capsule">КАПСУЛА</RadioButton>
-                        </WrapPanel>
-                        <TextBlock Text="Яркость" Style="{StaticResource Hint}" Margin="0,8,0,4"/>
-                        <WrapPanel>
-                            <RadioButton x:Name="Glow1" Style="{StaticResource RadioChip}" GroupName="glow" Click="OnLook" Tag="0.6">МЯГКО</RadioButton>
-                            <RadioButton x:Name="Glow2" Style="{StaticResource RadioChip}" GroupName="glow" Click="OnLook" Tag="1.0">НОРМА</RadioButton>
-                            <RadioButton x:Name="Glow3" Style="{StaticResource RadioChip}" GroupName="glow" Click="OnLook" Tag="1.3">ЯРКО</RadioButton>
-                            <RadioButton x:Name="Glow4" Style="{StaticResource RadioChip}" GroupName="glow" Click="OnLook" Tag="1.6">УЛЬТРА</RadioButton>
-                        </WrapPanel>
-                        <CheckBox x:Name="Anim" Click="OnLook" Margin="0,6,0,0">
-                            <TextBlock Style="{StaticResource BodyText}">Бегущий перелив по рамке</TextBlock>
-                        </CheckBox>
                     </StackPanel>
                 </Border>
 
                 <!-- Запуск -->
                 <Border Style="{StaticResource Card}" Margin="0,0,0,14">
                     <StackPanel>
-                        <TextBlock Text="ЗАПУСК" Style="{StaticResource Caps}" FontSize="12" Foreground="{DynamicResource Accent}" Margin="0,0,0,8"/>
+                        <TextBlock Text="Запуск" Style="{StaticResource H2}" Margin="0,0,0,8"/>
                         <CheckBox x:Name="AutostartBox" Click="OnChanged">
                             <TextBlock Style="{StaticResource BodyText}">Запускать вместе с Windows</TextBlock>
                         </CheckBox>
@@ -106,7 +90,7 @@
                 <!-- DNS -->
                 <Border Style="{StaticResource Card}" Margin="0,0,0,14">
                     <StackPanel>
-                        <TextBlock Text="DNS" Style="{StaticResource Caps}" FontSize="12" Foreground="{DynamicResource Accent}" Margin="0,0,0,8"/>
+                        <TextBlock Text="Dns" Style="{StaticResource H2}" Margin="0,0,0,8"/>
                         <TextBlock Text="Для сайтов через VPN (DoH, идёт через сервер)" Style="{StaticResource Hint}" Margin="0,0,0,4"/>
                         <TextBox x:Name="RemoteDns" LostFocus="OnChanged"/>
                         <TextBlock Text="Для сайтов напрямую (DoH или «system» — DNS Windows)" Style="{StaticResource Hint}" Margin="0,8,0,4"/>
@@ -117,11 +101,11 @@
                 <!-- Служебное -->
                 <Border Style="{StaticResource Card}">
                     <StackPanel>
-                        <TextBlock Text="СЛУЖЕБНОЕ" Style="{StaticResource Caps}" FontSize="12" Foreground="{DynamicResource Accent}" Margin="0,0,0,8"/>
+                        <TextBlock Text="Служебное" Style="{StaticResource H2}" Margin="0,0,0,8"/>
                         <WrapPanel>
-                            <Button Style="{StaticResource NeonButton}" Content="ЖУРНАЛ" Click="OnLog" Margin="0,0,8,6"/>
-                            <Button Style="{StaticResource NeonButton}" Content="ПАПКА ДАННЫХ" Click="OnData" Margin="0,0,8,6"/>
-                            <Button Style="{StaticResource NeonButton}" Content="ВЫХОД" Click="OnExit" Margin="0,0,8,6" BorderBrush="{DynamicResource Bad}" Foreground="{DynamicResource Bad}"/>
+                            <Button Style="{StaticResource NeonButton}" Content="Журнал" Click="OnLog" Margin="0,0,8,6"/>
+                            <Button Style="{StaticResource NeonButton}" Content="Папка данных" Click="OnData" Margin="0,0,8,6"/>
+                            <Button Style="{StaticResource NeonButton}" Content="Выход" Click="OnExit" Margin="0,0,8,6" Foreground="{DynamicResource Bad}"/>
                         </WrapPanel>
                         <TextBlock x:Name="VersionText" Style="{StaticResource Hint}" FontSize="11" Margin="0,4,0,0"/>
                     </StackPanel>

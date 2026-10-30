@@ -6,6 +6,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -172,6 +173,14 @@ namespace NeonVpn.Core
             return p;
         }
 
+        /// <summary>Сервер не смог соединиться через Xray: (тег из плана, причина).</summary>
+        public event Action<string, string> ServerError;
+
+        private static readonly Regex XrayDetour = new Regex(@"\[(\d+)\] app/dispatcher: taking detour \[([^\]]+)\]", RegexOptions.Compiled);
+        private static readonly Regex XrayFailed = new Regex(@"\[(\d+)\] app/proxyman/outbound: .*failed to process outbound traffic > (.*)$", RegexOptions.Compiled);
+        private readonly Dictionary<string, string> sessionTag = new Dictionary<string, string>();
+        private readonly Dictionary<string, DateTime> lastReported = new Dictionary<string, DateTime>();
+
         private void OnLine(string label, string line)
         {
             if (string.IsNullOrWhiteSpace(line))
@@ -189,14 +198,87 @@ namespace NeonVpn.Core
                 }
             }
 
+            // Xray пишет причину сбоя соединения только на уровне info и с номером сессии;
+            // номер сессии связываем с сервером по строке «taking detour [nX]».
+            if (label == "xray")
+            {
+                Match d = XrayDetour.Match(line);
+
+                if (d.Success)
+                {
+                    lock (sessionTag)
+                    {
+                        if (sessionTag.Count > 4000) sessionTag.Clear();
+                        sessionTag[d.Groups[1].Value] = d.Groups[2].Value;
+                    }
+
+                    return;
+                }
+
+                Match f = XrayFailed.Match(line);
+
+                if (f.Success)
+                {
+                    string tag;
+
+                    lock (sessionTag)
+                    {
+                        sessionTag.TryGetValue(f.Groups[1].Value, out tag);
+                    }
+
+                    string reason = ShortReason(f.Groups[2].Value);
+                    ServerError?.Invoke(tag, reason);
+
+                    // В журнал — не чаще раза в 30 секунд на сервер.
+                    string key = tag ?? "?";
+                    bool write;
+
+                    lock (lastReported)
+                    {
+                        write = !lastReported.TryGetValue(key, out DateTime t) || DateTime.UtcNow - t > TimeSpan.FromSeconds(30);
+                        if (write) lastReported[key] = DateTime.UtcNow;
+                    }
+
+                    if (write)
+                    {
+                        string server = tag != null ? Plan?.ByTag(tag)?.Server.DisplayName ?? tag : "?";
+                        Log.Write($"[{name}/xray] {server}: {reason}");
+                    }
+
+                    return;
+                }
+
+                // Остальные строки info (каждое соединение) не нужны.
+                if (line.Contains("[Info]") || line.Contains("[Debug]") || line.Contains(" accepted ") || line.Contains("is deprecated"))
+                {
+                    return;
+                }
+            }
+
             string l = line.ToLowerInvariant();
 
             // В журнал — только важное: предупреждения о каждом соединении забьют его за минуты.
             if (l.Contains("fatal") || l.Contains("panic") || l.Contains("start service") || l.Contains("failed to start")
-                || (l.Contains("error") && !l.Contains("connection") && !l.Contains("dns:")))
+                || (l.Contains("error") && !l.Contains("connection") && !l.Contains("dns:") && !l.Contains("is deprecated")))
             {
                 Log.Write($"[{name}/{label}] {line}");
             }
+        }
+
+        /// <summary>Из цепочки «a > b > c: d» — самое содержательное звено.</summary>
+        public static string ShortReason(string chain)
+        {
+            string[] parts = chain.Split(" > ");
+            string tail = parts.Length > 0 ? parts[^1] : chain;
+
+            // «all retry attempts failed» ничего не объясняет — берём звено перед ним.
+            if (tail.Contains("all retry attempts failed") && parts.Length > 1)
+            {
+                tail = parts[^2];
+            }
+
+            tail = tail.Replace("common/retry: ", "").Trim('[', ']', ' ');
+            return tail.Length > 200 ? tail.Substring(0, 200) + "…" : tail;
         }
 
         private string Tail()

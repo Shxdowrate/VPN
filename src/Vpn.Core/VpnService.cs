@@ -77,6 +77,26 @@ namespace NeonVpn.Core
             this.hooks = hooks;
             this.selfProcesses = selfProcesses;
             main.Crashed += OnCrashed;
+            main.ServerError += (tag, why) => RememberError(main, tag, why);
+            probe.ServerError += (tag, why) => RememberError(probe, tag, why);
+        }
+
+        /// <summary>Последняя причина, по которой сервер не ответил (ключ → текст). Пока знаем только для Xray.</summary>
+        public Dictionary<string, string> LastError { get; } = new Dictionary<string, string>();
+
+        private void RememberError(CoreRunner runner, string tag, string why)
+        {
+            string key = tag != null ? runner.Plan?.ByTag(tag)?.Server.Key : null;
+
+            if (key == null)
+            {
+                return;
+            }
+
+            lock (LastError)
+            {
+                LastError[key] = why;
+            }
         }
 
         public void Save()
@@ -589,6 +609,14 @@ namespace NeonVpn.Core
                             Settings.LastPing[s.Key] = best ?? -1;
                         }
 
+                        if (best != null)
+                        {
+                            lock (LastError)
+                            {
+                                LastError.Remove(s.Key);
+                            }
+                        }
+
                         lock (Pinging)
                         {
                             Pinging.Remove(s.Key);
@@ -618,6 +646,20 @@ namespace NeonVpn.Core
                 }
 
                 PingsUpdated?.Invoke();
+            }
+
+            // Никто не ответил — скажем почему, если ядро объяснило.
+            if (result.Count > 1 && result.Values.All(v => v == null))
+            {
+                string why;
+
+                lock (LastError)
+                {
+                    why = list.Select(x => LastError.TryGetValue(x.Key, out string w) ? w : null).Where(w => w != null)
+                        .GroupBy(w => w).OrderByDescending(g => g.Count()).Select(g => g.Key).FirstOrDefault();
+                }
+
+                Notice?.Invoke("Ни один сервер не ответил" + (why != null ? ". Xray пишет: " + why : "."));
             }
 
             return result;

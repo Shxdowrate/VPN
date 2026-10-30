@@ -36,11 +36,10 @@ namespace NeonVpn.Views
             FontFamily = (FontFamily)Application.Current.Resources["Body"];
 
             Grid root = new Grid();
-            NeonFrame frame = new NeonFrame { Shape = App.Vpn.Settings.FrameShape, Compact = true, GlowColor = Palette.Accent2, GlowColor2 = Palette.Accent, Intensity = App.Vpn.Settings.Glow };
-            root.Children.Add(frame);
+            root.Children.Add(new WindowFrame());
 
-            StackPanel panel = new StackPanel { Margin = new Thickness(36, 30, 36, 34) };
-            panel.Children.Add(new TextBlock { Text = title, Style = (Style)Application.Current.Resources["H2"], FontSize = 17, Margin = new Thickness(0, 0, 0, 6) });
+            StackPanel panel = new StackPanel { Margin = new Thickness(26, 22, 26, 22) };
+            panel.Children.Add(new TextBlock { Text = title, Style = (Style)Application.Current.Resources["H2"], FontSize = 15, Margin = new Thickness(0, 0, 0, 6) });
 
             if (!string.IsNullOrEmpty(hint))
             {
@@ -73,7 +72,7 @@ namespace NeonVpn.Views
             }
 
             StackPanel buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 18, 0, 0) };
-            Button cancel = new Button { Content = "ОТМЕНА", Style = (Style)Application.Current.Resources["NeonButton"], Margin = new Thickness(0, 0, 8, 0), IsCancel = true };
+            Button cancel = new Button { Content = "Отмена", Style = (Style)Application.Current.Resources["NeonButton"], Margin = new Thickness(0, 0, 8, 0), IsCancel = true };
             Button okButton = new Button { Content = ok, Style = (Style)Application.Current.Resources["SolidButton"], IsDefault = !fields.Any(f => f.Multiline) };
             cancel.Click += (_, _) => Close();
             okButton.Click += (_, _) =>
@@ -121,11 +120,11 @@ namespace NeonVpn.Views
             return d.result;
         }
 
-        public static string AskOne(Window owner, string title, string hint, string value, string placeholder, string ok = "ГОТОВО") =>
+        public static string AskOne(Window owner, string title, string hint, string value, string placeholder, string ok = "Готово") =>
             Ask(owner, title, hint, ok, new Field { Value = value ?? "", Placeholder = placeholder })?.FirstOrDefault();
 
         /// <summary>Вопрос «да / нет».</summary>
-        public static bool Confirm(Window owner, string title, string hint, string ok = "ДА")
+        public static bool Confirm(Window owner, string title, string hint, string ok = "Да")
         {
             InputDialog d = new InputDialog(title, hint, Array.Empty<Field>(), ok);
 

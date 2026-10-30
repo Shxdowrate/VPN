@@ -52,12 +52,6 @@ namespace NeonVpn.Views
             {
                 Button b = new Button { Content = q.label, Style = (Style)FindResource("NeonButton"), Margin = new Thickness(0, 0, 6, 6), Padding = new Thickness(10, 4, 10, 4), FontSize = 11.5 };
 
-                if (q.action == RouteAction.Direct)
-                {
-                    b.BorderBrush = (System.Windows.Media.Brush)FindResource("Accent2");
-                    b.Foreground = b.BorderBrush;
-                }
-
                 b.Click += (_, _) => AddRule(q.kind, q.value, q.action);
                 QuickPanel.Children.Add(b);
             }

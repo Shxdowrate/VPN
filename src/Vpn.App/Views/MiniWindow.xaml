@@ -2,123 +2,92 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:c="clr-namespace:NeonVpn.Controls"
-        Title="Neon VPN" Width="376" Height="232" ResizeMode="NoResize"
+        Title="VPN" Width="340" Height="168" ResizeMode="NoResize"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         FontFamily="{StaticResource Body}" Foreground="{DynamicResource Text}"
         UseLayoutRounding="True" TextOptions.TextFormattingMode="Display" Icon="/Assets/app.ico">
 
-    <Grid x:Name="Root">
-        <c:NeonFrame x:Name="Frame" Compact="True"/>
-
-        <Grid Margin="26,22,26,26">
+    <c:WindowFrame x:Name="Root">
+        <Grid Margin="16,14,10,14">
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
             <!-- Кнопка, сервер, управление окном -->
-            <Grid Grid.Row="0">
+            <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <c:PowerButton x:Name="Power" Width="58" Height="58" Margin="4,4,16,0" Click="OnPower"
+                <c:PowerButton x:Name="Power" Width="44" Height="44" Margin="0,0,14,0" Click="OnPower"
                                StateColor="{Binding StateColor}" Busy="{Binding Busy}" Lit="{Binding Lit}"/>
 
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <StackPanel Orientation="Horizontal">
-                        <Border BorderBrush="{DynamicResource Accent2}" BorderThickness="1" CornerRadius="2,6,2,6" Padding="5,0" Margin="0,0,7,0" VerticalAlignment="Center">
-                            <TextBlock Text="{Binding ServerCountry}" FontFamily="{StaticResource Display}" FontSize="11" Foreground="{DynamicResource Accent2}"/>
-                        </Border>
-                        <TextBlock Text="{Binding ServerName}" FontFamily="{StaticResource Display}" FontSize="14.5" FontWeight="SemiBold"
-                                   TextTrimming="CharacterEllipsis" MaxWidth="170" VerticalAlignment="Center"/>
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                        <TextBlock Text="{Binding StateText}" Style="{StaticResource Caps}" FontSize="11" MaxWidth="120" TextTrimming="CharacterEllipsis">
-                            <TextBlock.Foreground>
-                                <SolidColorBrush Color="{Binding StateColor}"/>
-                            </TextBlock.Foreground>
-                        </TextBlock>
-                        <TextBlock Text="  ·  " Style="{StaticResource Caps}" FontSize="11"/>
-                        <TextBlock Text="{Binding Uptime}" Style="{StaticResource Caps}" FontSize="11"/>
-                        <TextBlock Text="  ·  " Style="{StaticResource Caps}" FontSize="11"/>
-                        <TextBlock Text="{Binding CoreText}" Style="{StaticResource Caps}" FontSize="11" Foreground="{DynamicResource Accent2}"/>
-                    </StackPanel>
+                    <TextBlock Style="{StaticResource BodyText}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis">
+                        <Run Text="{Binding ServerCountry, Mode=OneWay}" Foreground="{DynamicResource Dim}"/><Run Text=" "/><Run Text="{Binding ServerName, Mode=OneWay}"/>
+                    </TextBlock>
+                    <TextBlock Style="{StaticResource Caps}" TextTrimming="CharacterEllipsis">
+                        <Run Text="{Binding StateText, Mode=OneWay}"/><Run Text="  ·  "/><Run Text="{Binding Uptime, Mode=OneWay}"/>
+                    </TextBlock>
                 </StackPanel>
 
-                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Top" Margin="0,-4,-6,0">
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Top" Margin="0,-4,0,0">
                     <Button Style="{StaticResource IconButton}" Content="&#xE740;" ToolTip="Большое окно" Click="OnExpand" Width="28"/>
-                    <Button Style="{StaticResource IconButton}" Content="&#xE921;" ToolTip="Свернуть" Click="OnMinimize" Width="28"/>
                     <Button Style="{StaticResource CloseButton}" Content="&#xE8BB;" ToolTip="Скрыть в трей" Click="OnClose" Width="28"/>
                 </StackPanel>
             </Grid>
 
-            <!-- Через VPN -->
-            <Grid Grid.Row="1" Margin="0,14,0,0" DataContext="{Binding Vpn}">
+            <!-- Показатели: VPN и напрямую -->
+            <Grid Grid.Row="1" Margin="0,14,6,0" VerticalAlignment="Bottom">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="52"/>
+                    <ColumnDefinition Width="72"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="0.8*"/>
-                    <ColumnDefinition Width="0.6*"/>
+                    <ColumnDefinition Width="0.75*"/>
+                    <ColumnDefinition Width="0.55*"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="VPN" Style="{StaticResource Caps}" FontSize="11.5" Foreground="{DynamicResource Accent}" VerticalAlignment="Center"/>
-                <TextBlock Grid.Column="1" FontFamily="{StaticResource Display}" FontSize="13" Foreground="{DynamicResource Accent}" VerticalAlignment="Center">
-                    <Run Text="↓"/><Run Text="{Binding Down, Mode=OneWay}"/>
-                </TextBlock>
-                <TextBlock Grid.Column="2" FontFamily="{StaticResource Display}" FontSize="13" Foreground="{DynamicResource Accent2}" VerticalAlignment="Center">
-                    <Run Text="↑"/><Run Text="{Binding Up, Mode=OneWay}"/>
-                </TextBlock>
-                <TextBlock Grid.Column="3" Text="{Binding Ping}" FontFamily="{StaticResource Display}" FontSize="13" VerticalAlignment="Center" ToolTip="Пинг через VPN">
-                    <TextBlock.Foreground>
-                        <SolidColorBrush Color="{Binding PingColor}"/>
-                    </TextBlock.Foreground>
-                </TextBlock>
-                <TextBlock Grid.Column="4" Text="{Binding Loss}" FontFamily="{StaticResource Display}" FontSize="13" VerticalAlignment="Center" ToolTip="Потери через VPN">
-                    <TextBlock.Foreground>
-                        <SolidColorBrush Color="{Binding LossColor}"/>
-                    </TextBlock.Foreground>
-                </TextBlock>
-            </Grid>
-
-            <!-- Напрямую + график -->
-            <Grid Grid.Row="2" Margin="0,6,0,0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
-                <Grid DataContext="{Binding Direct}">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="52"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="0.8*"/>
-                        <ColumnDefinition Width="0.6*"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="ПРЯМО" Style="{StaticResource Caps}" FontSize="11.5" Foreground="{DynamicResource Accent2}" VerticalAlignment="Center"/>
-                    <TextBlock Grid.Column="1" FontFamily="{StaticResource Display}" FontSize="12" Foreground="{DynamicResource Dim}" VerticalAlignment="Center">
-                        <Run Text="↓"/><Run Text="{Binding Down, Mode=OneWay}"/>
-                    </TextBlock>
-                    <TextBlock Grid.Column="2" FontFamily="{StaticResource Display}" FontSize="12" Foreground="{DynamicResource Dim}" VerticalAlignment="Center">
-                        <Run Text="↑"/><Run Text="{Binding Up, Mode=OneWay}"/>
-                    </TextBlock>
-                    <TextBlock Grid.Column="3" Text="{Binding Ping}" FontFamily="{StaticResource Display}" FontSize="12" VerticalAlignment="Center" ToolTip="Пинг напрямую">
-                        <TextBlock.Foreground>
-                            <SolidColorBrush Color="{Binding PingColor}"/>
-                        </TextBlock.Foreground>
-                    </TextBlock>
-                    <TextBlock Grid.Column="4" Text="{Binding Loss}" FontFamily="{StaticResource Display}" FontSize="12" VerticalAlignment="Center" ToolTip="Потери напрямую">
-                        <TextBlock.Foreground>
-                            <SolidColorBrush Color="{Binding LossColor}"/>
-                        </TextBlock.Foreground>
-                    </TextBlock>
-                </Grid>
-                <c:Sparkline Grid.Row="1" Margin="0,6,0,0" DataContext="{Binding Vpn}" Down="{Binding DownHist}" Up="{Binding UpHist}" Points="40"
-                             Color="{DynamicResource AccentColor}" Color2="{DynamicResource Accent2Color}"/>
+
+                <TextBlock Grid.Column="1" Text="↓" Style="{StaticResource Caps}"/>
+                <TextBlock Grid.Column="2" Text="↑" Style="{StaticResource Caps}"/>
+                <TextBlock Grid.Column="3" Text="пинг" Style="{StaticResource Caps}"/>
+                <TextBlock Grid.Column="4" Text="потери" Style="{StaticResource Caps}"/>
+
+                <TextBlock Grid.Row="1" Text="VPN" Style="{StaticResource Caps}" Foreground="{DynamicResource Text}" Margin="0,4,0,0"/>
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Vpn.Down}" Style="{StaticResource Metric}" FontSize="12.5" Margin="0,4,0,0"/>
+                <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding Vpn.Up}" Style="{StaticResource Metric}" FontSize="12.5" Margin="0,4,0,0"/>
+                <TextBlock Grid.Row="1" Grid.Column="3" Text="{Binding Vpn.Ping}" Style="{StaticResource Metric}" FontSize="12.5" Margin="0,4,0,0">
+                    <TextBlock.Foreground>
+                        <SolidColorBrush Color="{Binding Vpn.PingColor}"/>
+                    </TextBlock.Foreground>
+                </TextBlock>
+                <TextBlock Grid.Row="1" Grid.Column="4" Text="{Binding Vpn.Loss}" Style="{StaticResource Metric}" FontSize="12.5" Margin="0,4,0,0">
+                    <TextBlock.Foreground>
+                        <SolidColorBrush Color="{Binding Vpn.LossColor}"/>
+                    </TextBlock.Foreground>
+                </TextBlock>
+
+                <TextBlock Grid.Row="2" Text="Напрямую" Style="{StaticResource Caps}" Margin="0,3,0,0"/>
+                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Direct.Down}" Style="{StaticResource Metric}" FontSize="12.5" Foreground="{DynamicResource Dim}" Margin="0,3,0,0"/>
+                <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding Direct.Up}" Style="{StaticResource Metric}" FontSize="12.5" Foreground="{DynamicResource Dim}" Margin="0,3,0,0"/>
+                <TextBlock Grid.Row="2" Grid.Column="3" Text="{Binding Direct.Ping}" Style="{StaticResource Metric}" FontSize="12.5" Margin="0,3,0,0">
+                    <TextBlock.Foreground>
+                        <SolidColorBrush Color="{Binding Direct.PingColor}"/>
+                    </TextBlock.Foreground>
+                </TextBlock>
+                <TextBlock Grid.Row="2" Grid.Column="4" Text="{Binding Direct.Loss}" Style="{StaticResource Metric}" FontSize="12.5" Margin="0,3,0,0">
+                    <TextBlock.Foreground>
+                        <SolidColorBrush Color="{Binding Direct.LossColor}"/>
+                    </TextBlock.Foreground>
+                </TextBlock>
             </Grid>
         </Grid>
-    </Grid>
+    </c:WindowFrame>
 </Window>

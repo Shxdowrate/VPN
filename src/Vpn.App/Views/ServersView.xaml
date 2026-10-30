@@ -19,7 +19,7 @@
                     <Button Style="{StaticResource IconButton}" Content="&#xE8C8;" ToolTip="Вставить ссылки серверов" Click="OnPasteLinks"/>
                     <Button Style="{StaticResource IconButton}" Content="&#xE902;" ToolTip="Новая группа" Click="OnNewGroup"/>
                 </StackPanel>
-                <TextBlock Text="ИСТОЧНИКИ" Style="{StaticResource Caps}" FontSize="12" VerticalAlignment="Center"/>
+                <TextBlock Text="Источники" Style="{StaticResource Caps}" FontSize="12" VerticalAlignment="Center"/>
             </DockPanel>
 
             <ListBox x:Name="SourceList" Style="{StaticResource PlainList}" ItemContainerStyle="{StaticResource PlainItem}" SelectionChanged="OnSourceChanged">
@@ -70,24 +70,24 @@
                         ToolTip="Пингую серверы этого списка, подключаю самый быстрый и фиксирую его">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE945;" FontFamily="{StaticResource Icons}" Margin="0,0,7,0" VerticalAlignment="Center"/>
-                        <TextBlock Text="ЛУЧШИЙ ЗДЕСЬ"/>
+                        <TextBlock Text="Лучший здесь"/>
                     </StackPanel>
                 </Button>
                 <Button x:Name="AutoHere" Style="{StaticResource NeonButton}" Click="OnAutoHere" Margin="0,0,8,6"
                         ToolTip="«Авто» будет сам держать самый быстрый сервер из этого списка">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE8EE;" FontFamily="{StaticResource Icons}" Margin="0,0,7,0" VerticalAlignment="Center"/>
-                        <TextBlock Text="АВТО ЗДЕСЬ"/>
+                        <TextBlock Text="Авто здесь"/>
                     </StackPanel>
                 </Button>
-                <Button Style="{StaticResource NeonButton}" Click="OnPing" Margin="0,0,8,6" BorderBrush="{DynamicResource Accent2}" Foreground="{DynamicResource Accent2}">
+                <Button Style="{StaticResource NeonButton}" Click="OnPing" Margin="0,0,8,6">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xEC48;" FontFamily="{StaticResource Icons}" Margin="0,0,7,0" VerticalAlignment="Center"/>
-                        <TextBlock Text="ПИНГ"/>
+                        <TextBlock Text="Пинг"/>
                     </StackPanel>
                 </Button>
-                <ToggleButton x:Name="SortChip" Style="{StaticResource Chip}" Click="OnSort" Margin="4,0,6,6" ToolTip="Сортировать по пингу">ПО ПИНГУ</ToggleButton>
-                <ToggleButton x:Name="OnlyOnChip" Style="{StaticResource Chip}" Click="OnSort" Margin="0,0,6,6" ToolTip="Показывать только включённые">ТОЛЬКО ВКЛ.</ToggleButton>
+                <ToggleButton x:Name="SortChip" Style="{StaticResource Chip}" Click="OnSort" Margin="4,0,6,6" ToolTip="Сортировать по пингу">По пингу</ToggleButton>
+                <ToggleButton x:Name="OnlyOnChip" Style="{StaticResource Chip}" Click="OnSort" Margin="0,0,6,6" ToolTip="Показывать только включённые">Только вкл.</ToggleButton>
             </WrapPanel>
 
             <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
@@ -112,18 +112,15 @@
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="30"/>
-                                    <ColumnDefinition Width="46"/>
+                                    <ColumnDefinition Width="34"/>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="28"/>
                                 </Grid.ColumnDefinitions>
                                 <CheckBox IsChecked="{Binding Included}" VerticalAlignment="Center" Click="OnIncludeClick" Margin="0"
                                           ToolTip="Участвует в «Авто» и «Лучшем»"/>
-                                <Border Grid.Column="1" Width="36" Height="24" CornerRadius="2,7,2,7" BorderThickness="1" HorizontalAlignment="Left"
-                                        BorderBrush="{DynamicResource Line}">
-                                    <TextBlock Text="{Binding Country}" FontFamily="{StaticResource Display}" FontSize="12" FontWeight="SemiBold"
-                                               HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource Accent2}"/>
-                                </Border>
+                                <TextBlock Grid.Column="1" Text="{Binding Country}" Style="{StaticResource Caps}" FontSize="12" FontWeight="SemiBold"
+                                           VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="2" VerticalAlignment="Center">
                                     <TextBlock Text="{Binding Name}" FontFamily="{StaticResource Display}" FontSize="13.5" TextTrimming="CharacterEllipsis"/>
                                     <TextBlock Style="{StaticResource Hint}" FontSize="11" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis">
@@ -136,13 +133,13 @@
                                             <SolidColorBrush Color="{Binding PingColor}"/>
                                         </TextBlock.Foreground>
                                     </TextBlock>
-                                    <TextBlock Text="···" FontFamily="{StaticResource Display}" FontSize="14" Foreground="{DynamicResource Accent2}" HorizontalAlignment="Right"
+                                    <TextBlock Text="···" FontFamily="{StaticResource Display}" FontSize="14" Foreground="{DynamicResource Dim}" HorizontalAlignment="Right"
                                                Visibility="{Binding Pinging, Converter={StaticResource Vis}}"/>
                                 </Grid>
                                 <Grid Grid.Column="4" VerticalAlignment="Center">
                                     <Ellipse Width="9" Height="9" Fill="{DynamicResource Accent}" Effect="{DynamicResource GlowAccent}"
                                              Visibility="{Binding IsCurrent, Converter={StaticResource Vis}}" ToolTip="Подключено сейчас"/>
-                                    <TextBlock Text="&#xE718;" Style="{StaticResource Icon}" FontSize="12" Foreground="{DynamicResource Warn}" Margin="0,0,0,16"
+                                    <TextBlock Text="&#xE718;" Style="{StaticResource Icon}" FontSize="11" Foreground="{DynamicResource Dim}" Margin="0,0,0,16"
                                                Visibility="{Binding IsFixed, Converter={StaticResource Vis}}" ToolTip="Зафиксирован"/>
                                 </Grid>
                             </Grid>
@@ -154,8 +151,8 @@
                     <TextBlock Text="&#xE774;" Style="{StaticResource Icon}" FontSize="40" Foreground="{DynamicResource Dim2}" Margin="0,0,0,14"/>
                     <TextBlock x:Name="EmptyText" Style="{StaticResource Hint}" TextAlignment="Center" FontSize="13"/>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,16,0,0">
-                        <Button Style="{StaticResource SolidButton}" Content="ДОБАВИТЬ ПОДПИСКУ" Click="OnAddSubscription" Margin="0,0,8,0"/>
-                        <Button Style="{StaticResource NeonButton}" Content="ВСТАВИТЬ ССЫЛКИ" Click="OnPasteLinks"/>
+                        <Button Style="{StaticResource SolidButton}" Content="Добавить подписку" Click="OnAddSubscription" Margin="0,0,8,0"/>
+                        <Button Style="{StaticResource NeonButton}" Content="Вставить ссылки" Click="OnPasteLinks"/>
                     </StackPanel>
                 </StackPanel>
             </Grid>

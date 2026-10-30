@@ -44,16 +44,8 @@ namespace NeonVpn.Core
         public bool ConnectOnLaunch { get; set; }
         public bool StartMinimized { get; set; }
 
-        /// <summary>Неон: основной цвет свечения (#RRGGBB).</summary>
-        public string Accent { get; set; } = "#76FF03";
-        public string Accent2 { get; set; } = "#00E5FF";
-        public bool Animations { get; set; } = true;
-
-        /// <summary>Силуэт окна: Blade (срезанные углы и выступ), Shard (асимметричный осколок), Capsule (скруглённый).</summary>
-        public string FrameShape { get; set; } = "Blade";
-
-        /// <summary>Яркость свечения 0.3–1.5.</summary>
-        public double Glow { get; set; } = 1.0;
+        /// <summary>Акцентный цвет «включено» (#RRGGBB).</summary>
+        public string Accent { get; set; } = "#3DDC84";
 
         public double MainLeft { get; set; } = double.NaN;
         public double MainTop { get; set; } = double.NaN;

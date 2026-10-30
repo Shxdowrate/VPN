@@ -157,7 +157,18 @@ namespace NeonVpn
 
             bool autostart = e.Args.Contains("--autostart");
 
-            if (!(autostart && settings.StartMinimized))
+            string page = e.Args.FirstOrDefault(a => a.StartsWith("--page="))?.Substring(7);
+
+            if (e.Args.Contains("--mini"))
+            {
+                ShowMini();
+            }
+            else if (page != null)
+            {
+                ShowMain();
+                MainWin.GoTo(page);
+            }
+            else if (!(autostart && settings.StartMinimized))
             {
                 if (settings.StartInMini) ShowMini();
                 else ShowMain();

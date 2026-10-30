@@ -15,6 +15,8 @@ namespace NeonVpn.Views
         {
             InitializeComponent();
             DataContext = App.Vm;
+            VpnRow.Content = App.Vm.Vpn;
+            DirectRow.Content = App.Vm.Direct;
             Loaded += (_, _) => OnStateChanged();
         }
 
@@ -25,7 +27,6 @@ namespace NeonVpn.Views
             ProxyChip.IsChecked = s.UseSystemProxy;
             CoreSing.IsChecked = s.Core == CoreKind.SingBox;
             CoreXray.IsChecked = s.Core == CoreKind.Xray;
-            TargetIcon.Text = s.Target.Auto ? "" : s.Target.PickedAsBest ? "" : "";
         }
 
         private async void OnPower(object sender, RoutedEventArgs e) => await App.Vpn.ToggleAsync();
