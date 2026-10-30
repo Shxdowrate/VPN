@@ -24,10 +24,70 @@ namespace NeonVpn
         private DispatcherTimer statsTimer;
         private DispatcherTimer subsTimer;
         private bool exiting;
+        private static bool started;
+
+        public static readonly string DataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NeonVPN");
+
+        /// <summary>
+        /// Ловушка сбоев с самого начала — ещё до загрузки XAML-ресурсов. Без неё ошибка в теме или окне
+        /// убивала программу молча: ни окна, ни журнала.
+        /// </summary>
+        static App()
+        {
+            AppDomain.CurrentDomain.UnhandledException += (_, ex) => Fatal(ex.ExceptionObject as Exception, "Сбой");
+        }
+
+        /// <summary>Пишет crash.log, показывает окно с ошибкой и закрывает программу.</summary>
+        public static void Fatal(Exception e, string where)
+        {
+            string text = where + ": " + e;
+
+            try
+            {
+                Directory.CreateDirectory(DataDir);
+                File.AppendAllText(Path.Combine(DataDir, "crash.log"), DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + text + Environment.NewLine + Environment.NewLine);
+                Log.Write(text);
+            }
+            catch
+            {
+                // хоть окно покажем
+            }
+
+            try
+            {
+                Vpn?.ShutdownAsync().Wait(3000);
+            }
+            catch
+            {
+                // ядра закроются вместе с процессом
+            }
+
+            Exception root = e;
+            while (root?.InnerException != null) root = root.InnerException;
+
+            MessageBox.Show("Neon VPN не смог запуститься.\n\n" + root?.GetType().Name + ": " + root?.Message +
+                            "\n\nПодробности: " + Path.Combine(DataDir, "crash.log"),
+                "Neon VPN — ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+            Environment.Exit(1);
+        }
 
         protected override async void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
+
+            try
+            {
+                await StartAsync(e);
+            }
+            catch (Exception ex)
+            {
+                Fatal(ex, "Запуск");
+            }
+        }
+
+        private async Task StartAsync(StartupEventArgs e)
+        {
+            Paths.Init(AppContext.BaseDirectory, DataDir);
 
             // Одна копия: вторая просто показывает окно первой.
             single = new Mutex(true, "NeonVPN-single-instance", out bool first);
@@ -42,18 +102,23 @@ namespace NeonVpn
 
             DispatcherUnhandledException += (_, ex) =>
             {
+                // Пока окно не показано, ошибка — смертельная: иначе процесс висел бы невидимым.
+                if (!started)
+                {
+                    ex.Handled = true;
+                    Fatal(ex.Exception, "Окно");
+                    return;
+                }
+
                 Log.Write("Ошибка окна: " + ex.Exception);
                 ex.Handled = true;
             };
-            AppDomain.CurrentDomain.UnhandledException += (_, ex) => Log.Write("Сбой: " + ex.ExceptionObject);
             TaskScheduler.UnobservedTaskException += (_, ex) =>
             {
                 Log.Write("Фоновая ошибка: " + ex.Exception?.GetBaseException().Message);
                 ex.SetObserved();
             };
 
-            string data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NeonVPN");
-            Paths.Init(AppContext.BaseDirectory, data);
             Log.Trim();
             Log.Write("—— запуск " + typeof(App).Assembly.GetName().Version);
 
@@ -98,6 +163,7 @@ namespace NeonVpn
                 else ShowMain();
             }
 
+            started = true;
             statsTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(500), DispatcherPriority.Background, (_, _) => Vm.RefreshStats(), Dispatcher);
             statsTimer.Start();
 

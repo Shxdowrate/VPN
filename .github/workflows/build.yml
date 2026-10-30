@@ -114,6 +114,41 @@ jobs:
           }
           Write-Host "Configs OK"
 
+      - name: Smoke test (launch VPN.exe, screenshot, logs)
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+          New-Item -ItemType Directory -Force smoke | Out-Null
+          $p = Start-Process -FilePath "out/VPN/VPN.exe" -PassThru
+          Start-Sleep -Seconds 20
+          "alive: $(-not $p.HasExited)  exit: $(if ($p.HasExited) { $p.ExitCode } else { '-' })" | Tee-Object smoke/result.txt
+          Get-Process | Where-Object { $_.ProcessName -match 'VPN|sing-box|xray' } | Format-Table ProcessName, Id, MainWindowTitle -AutoSize | Out-String | Add-Content smoke/result.txt
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          $g = [System.Drawing.Graphics]::FromImage($bmp)
+          $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          $bmp.Save("smoke/screen.png", [System.Drawing.Imaging.ImageFormat]::Png)
+          Copy-Item "$env:LOCALAPPDATA/NeonVPN/vpn.log", "$env:LOCALAPPDATA/NeonVPN/crash.log" smoke/ -ErrorAction SilentlyContinue
+          Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = (Get-Date).AddMinutes(-3) } -ErrorAction SilentlyContinue |
+            Where-Object { $_.LevelDisplayName -in 'Error', 'Critical' } | Format-List TimeCreated, ProviderName, Message | Out-String -Width 400 | Set-Content smoke/events.txt
+          Get-Content smoke/result.txt
+          if (Test-Path smoke/crash.log) { Get-Content smoke/crash.log }
+          Get-Content smoke/events.txt -ErrorAction SilentlyContinue | Select-Object -First 60
+          Stop-Process -Name VPN, sing-box, xray -Force -ErrorAction SilentlyContinue
+
+      - name: Publish smoke results
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/smoke && cp -r smoke/* /tmp/smoke/ 2>/dev/null; cp build.log /tmp/smoke/ 2>/dev/null; cd /tmp/smoke
+          git init -q && git config user.name ci && git config user.email ci@users.noreply.github.com
+          git add -A && git commit -qm "smoke for $GITHUB_SHA"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}" HEAD:ci-smoke
+
       - name: Publish build log on failure
         if: failure()
         shell: bash
