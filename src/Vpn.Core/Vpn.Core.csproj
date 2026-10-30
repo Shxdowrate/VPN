@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Вся логика клиента без привязки к Windows: модели, подписки, конфиги ядер, запуск, пинги, статистика.
+       Собирается и тестируется где угодно; окно (Vpn.App) только показывает и управляет. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>NeonVpn.Core</RootNamespace>
+    <AssemblyName>NeonVpn.Core</AssemblyName>
+  </PropertyGroup>
+
+</Project>
