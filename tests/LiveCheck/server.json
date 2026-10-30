@@ -1,0 +1,85 @@
+{
+ "log": {
+  "loglevel": "warning"
+ },
+ "inbounds": [
+  {
+   "port": 30001,
+   "listen": "127.0.0.1",
+   "protocol": "vless",
+   "settings": {
+    "clients": [
+     {
+      "id": "6f1c3a52-1b1e-4a5a-9c39-1a2b3c4d5e6f"
+     }
+    ],
+    "decryption": "none"
+   },
+   "streamSettings": {
+    "network": "raw"
+   }
+  },
+  {
+   "port": 30002,
+   "listen": "127.0.0.1",
+   "protocol": "vmess",
+   "settings": {
+    "clients": [
+     {
+      "id": "6f1c3a52-1b1e-4a5a-9c39-1a2b3c4d5e6f"
+     }
+    ]
+   },
+   "streamSettings": {
+    "network": "ws",
+    "wsSettings": {
+     "path": "/ws"
+    }
+   }
+  },
+  {
+   "port": 30003,
+   "listen": "127.0.0.1",
+   "protocol": "shadowsocks",
+   "settings": {
+    "method": "chacha20-ietf-poly1305",
+    "password": "pass123",
+    "network": "tcp,udp"
+   }
+  },
+  {
+   "port": 30004,
+   "listen": "127.0.0.1",
+   "protocol": "vless",
+   "settings": {
+    "clients": [
+     {
+      "id": "6f1c3a52-1b1e-4a5a-9c39-1a2b3c4d5e6f"
+     }
+    ],
+    "decryption": "none"
+   },
+   "streamSettings": {
+    "network": "xhttp",
+    "xhttpSettings": {
+     "path": "/xh"
+    }
+   }
+  }
+ ],
+ "outbounds": [
+  {
+   "protocol": "freedom",
+   "settings": {
+    "finalRules": [
+     {
+      "action": "allow",
+      "ip": [
+       "127.0.0.1/32"
+      ]
+     }
+    ]
+   }
+  }
+ ]
+}

@@ -1,0 +1,131 @@
+<UserControl x:Class="NeonVpn.Views.HomeView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:NeonVpn.Controls">
+    <UserControl.Resources>
+        <!-- Строка показателей одного пути: подпись, ↓, ↑, пинг, потери, график -->
+        <DataTemplate x:Key="PathRow">
+            <Grid Height="58">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="110"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="0.8*"/>
+                    <ColumnDefinition Width="0.7*"/>
+                    <ColumnDefinition Width="1.4*"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Title}" Style="{StaticResource BodyText}" FontSize="13"/>
+                    <TextBlock Text="{Binding Total}" Style="{StaticResource Caps}" FontSize="11"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Text="Загрузка" Style="{StaticResource Caps}"/>
+                    <TextBlock Text="{Binding Down}" Style="{StaticResource Metric}"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                    <TextBlock Text="Отдача" Style="{StaticResource Caps}"/>
+                    <TextBlock Text="{Binding Up}" Style="{StaticResource Metric}"/>
+                </StackPanel>
+                <StackPanel Grid.Column="3" VerticalAlignment="Center">
+                    <TextBlock Text="Пинг" Style="{StaticResource Caps}"/>
+                    <TextBlock Text="{Binding Ping}" Style="{StaticResource Metric}">
+                        <TextBlock.Foreground>
+                            <SolidColorBrush Color="{Binding PingColor}"/>
+                        </TextBlock.Foreground>
+                    </TextBlock>
+                </StackPanel>
+                <StackPanel Grid.Column="4" VerticalAlignment="Center">
+                    <TextBlock Text="Потери" Style="{StaticResource Caps}"/>
+                    <TextBlock Text="{Binding Loss}" Style="{StaticResource Metric}">
+                        <TextBlock.Foreground>
+                            <SolidColorBrush Color="{Binding LossColor}"/>
+                        </TextBlock.Foreground>
+                    </TextBlock>
+                </StackPanel>
+                <c:Sparkline Grid.Column="5" Down="{Binding DownHist}" Up="{Binding UpHist}" Margin="12,10,0,10"
+                             Color="#ECEDEF" Color2="#8B9099"/>
+            </Grid>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- ===== Центр: кнопка, состояние, сервер ===== -->
+        <StackPanel Grid.Row="0" VerticalAlignment="Center" HorizontalAlignment="Center" Width="380">
+            <c:PowerButton x:Name="Power" Width="112" Height="112" HorizontalAlignment="Center" Click="OnPower"
+                           StateColor="{Binding StateColor}" Busy="{Binding Busy}" Lit="{Binding Lit}"/>
+
+            <TextBlock Text="{Binding StateText}" HorizontalAlignment="Center" FontFamily="{StaticResource Display}" FontSize="17"
+                       Margin="0,20,0,2" TextTrimming="CharacterEllipsis" MaxWidth="380"/>
+            <TextBlock Text="{Binding Uptime}" HorizontalAlignment="Center" Style="{StaticResource Caps}" FontSize="12"/>
+
+            <!-- Сервер — кликабельная строка -->
+            <Border Margin="0,26,0,0" CornerRadius="10" Background="{DynamicResource Panel}" Padding="14,11" Cursor="Hand"
+                    MouseLeftButtonUp="OnServerCard" ToolTip="Выбрать сервер">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding ServerCountry}" Style="{StaticResource Caps}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Dim}"
+                               VerticalAlignment="Center" Margin="0,0,10,0" MinWidth="18"/>
+                    <StackPanel Grid.Column="1">
+                        <TextBlock Text="{Binding ServerName}" Style="{StaticResource BodyText}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding TargetText}" Style="{StaticResource Caps}" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                    <TextBlock Grid.Column="2" Text="{Binding ServerPing}" Style="{StaticResource Caps}" VerticalAlignment="Center" Margin="10,0,8,0"/>
+                    <TextBlock Grid.Column="3" Text="&#xE76C;" Style="{StaticResource Icon}" FontSize="10" Foreground="{DynamicResource Dim}"/>
+                </Grid>
+            </Border>
+
+            <!-- Выбор: лучший / авто -->
+            <Grid Margin="0,10,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="8"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Button Style="{StaticResource NeonButton}" Click="OnBest" Content="Лучший сервер"
+                        ToolTip="Пингую все серверы, подключаю самый быстрый и фиксирую его — дальше он не меняется"/>
+                <Button x:Name="AutoButton" Grid.Column="2" Style="{StaticResource NeonButton}" Click="OnAuto"
+                        ToolTip="«Авто» сам держит самый быстрый сервер среди всех, подписки или группы">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Авто"/>
+                        <TextBlock Text="&#xE70D;" FontFamily="{StaticResource Icons}" FontSize="9" Margin="8,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource Dim}"/>
+                    </StackPanel>
+                </Button>
+            </Grid>
+
+            <!-- Режим и ядро: два тихих сегмента -->
+            <Grid Margin="0,14,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                    <ToggleButton x:Name="TunChip" Style="{StaticResource Chip}" Click="OnMode" ToolTip="Виртуальный адаптер: весь трафик системы">TUN</ToggleButton>
+                    <ToggleButton x:Name="ProxyChip" Style="{StaticResource Chip}" Click="OnMode" ToolTip="Системный прокси Windows: браузеры и программы, которые его понимают">Прокси</ToggleButton>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <RadioButton x:Name="CoreSing" Style="{StaticResource RadioChip}" GroupName="core" Click="OnCore">sing-box</RadioButton>
+                    <RadioButton x:Name="CoreXray" Style="{StaticResource RadioChip}" GroupName="core" Click="OnCore">Xray</RadioButton>
+                </StackPanel>
+            </Grid>
+        </StackPanel>
+
+        <!-- ===== Низ: два пути трафика ===== -->
+        <StackPanel Grid.Row="1">
+            <Border Height="1" Background="{DynamicResource Line}" Margin="0,0,0,4"/>
+            <ContentControl x:Name="VpnRow" ContentTemplate="{StaticResource PathRow}" Focusable="False"/>
+            <Border Height="1" Background="{DynamicResource Line}" Opacity="0.6"/>
+            <ContentControl x:Name="DirectRow" ContentTemplate="{StaticResource PathRow}" Focusable="False"/>
+        </StackPanel>
+
+    </Grid>
+</UserControl>

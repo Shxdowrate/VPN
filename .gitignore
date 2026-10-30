@@ -3,4 +3,4 @@ obj/
 out/
 *.user
 .vs/
-test-config.json
+test-configs/

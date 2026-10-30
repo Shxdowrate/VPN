@@ -1,0 +1,315 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Threading;
+using NeonVpn.Core;
+using NeonVpn.Services;
+using NeonVpn.Views;
+
+namespace NeonVpn
+{
+    public partial class App : Application
+    {
+        public static VpnService Vpn { get; private set; }
+        public static MainVm Vm { get; private set; }
+        public static Tray Tray { get; private set; }
+        public static Views.MainWindow MainWin { get; private set; }
+        public static MiniWindow Mini { get; private set; }
+
+        private static Mutex single;
+        private static EventWaitHandle showSignal;
+        private DispatcherTimer statsTimer;
+        private DispatcherTimer subsTimer;
+        private bool exiting;
+        private static bool started;
+
+        public static readonly string DataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NeonVPN");
+
+        /// <summary>
+        /// Ловушка сбоев с самого начала — ещё до загрузки XAML-ресурсов. Без неё ошибка в теме или окне
+        /// убивала программу молча: ни окна, ни журнала.
+        /// </summary>
+        static App()
+        {
+            AppDomain.CurrentDomain.UnhandledException += (_, ex) => Fatal(ex.ExceptionObject as Exception, "Сбой");
+        }
+
+        /// <summary>Пишет crash.log, показывает окно с ошибкой и закрывает программу.</summary>
+        public static void Fatal(Exception e, string where)
+        {
+            string text = where + ": " + e;
+
+            try
+            {
+                Directory.CreateDirectory(DataDir);
+                File.AppendAllText(Path.Combine(DataDir, "crash.log"), DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + text + Environment.NewLine + Environment.NewLine);
+                Log.Write(text);
+            }
+            catch
+            {
+                // хоть окно покажем
+            }
+
+            try
+            {
+                Vpn?.ShutdownAsync().Wait(3000);
+            }
+            catch
+            {
+                // ядра закроются вместе с процессом
+            }
+
+            Exception root = e;
+            while (root?.InnerException != null) root = root.InnerException;
+
+            MessageBox.Show("Neon VPN не смог запуститься.\n\n" + root?.GetType().Name + ": " + root?.Message +
+                            "\n\nПодробности: " + Path.Combine(DataDir, "crash.log"),
+                "Neon VPN — ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+            Environment.Exit(1);
+        }
+
+        protected override async void OnStartup(StartupEventArgs e)
+        {
+            base.OnStartup(e);
+
+            try
+            {
+                await StartAsync(e);
+            }
+            catch (Exception ex)
+            {
+                Fatal(ex, "Запуск");
+            }
+        }
+
+        private async Task StartAsync(StartupEventArgs e)
+        {
+            Paths.Init(AppContext.BaseDirectory, DataDir);
+
+            // Одна копия: вторая просто показывает окно первой.
+            single = new Mutex(true, "NeonVPN-single-instance", out bool first);
+            showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, "NeonVPN-show");
+
+            if (!first)
+            {
+                showSignal.Set();
+                Shutdown();
+                return;
+            }
+
+            DispatcherUnhandledException += (_, ex) =>
+            {
+                // Пока окно не показано, ошибка — смертельная: иначе процесс висел бы невидимым.
+                if (!started)
+                {
+                    ex.Handled = true;
+                    Fatal(ex.Exception, "Окно");
+                    return;
+                }
+
+                Log.Write("Ошибка окна: " + ex.Exception);
+                ex.Handled = true;
+            };
+            TaskScheduler.UnobservedTaskException += (_, ex) =>
+            {
+                Log.Write("Фоновая ошибка: " + ex.Exception?.GetBaseException().Message);
+                ex.SetObserved();
+            };
+
+            Log.Trim();
+            Log.Write("—— запуск " + typeof(App).Assembly.GetName().Version);
+
+            Settings settings = File.Exists(Paths.Settings) ? Settings.Load(Paths.Settings) : Migration.FromOldVersion() ?? new Settings();
+            CoreRunner.KillLeftovers();
+            WindowsHooks.CleanupLeftover(settings.ProxyPort);
+            Theme.Apply(settings);
+
+            string exe = Path.GetFileName(Environment.ProcessPath ?? "VPN.exe");
+            Vpn = new VpnService(settings, new WindowsHooks(), new[] { exe, "VPN.exe" }.Distinct().ToArray());
+            Vpn.Save();
+            Vm = new MainVm(Vpn);
+
+            Vpn.StateChanged += () => Ui(OnStateChanged);
+            Vpn.PingsUpdated += () => Ui(() => MainWin?.Servers.OnPings());
+            Vpn.Notice += m => Ui(() => Notify(m, true));
+            Vpn.AutoSwitched += (from, to, why) => Ui(() => Notify($"Авто: {from?.DisplayName} → {to?.DisplayName} ({why})", false));
+
+            Tray = new Tray(Vpn);
+            Tray.OpenMain += () => Ui(ShowMain);
+            Tray.OpenMini += () => Ui(ShowMini);
+            Tray.Exit += () => Ui(() => _ = ExitAsync());
+
+            MainWin = new Views.MainWindow();
+            Mini = new MiniWindow();
+            Hotkey.Register(MainWin, () => Ui(() => _ = Vpn.ToggleAsync()));
+
+            // Сигнал от второй копии — показать окно.
+            Task.Run(() =>
+            {
+                while (showSignal.WaitOne())
+                {
+                    Ui(ShowMain);
+                }
+            });
+
+            bool autostart = e.Args.Contains("--autostart");
+
+            string page = e.Args.FirstOrDefault(a => a.StartsWith("--page="))?.Substring(7);
+
+            if (e.Args.Contains("--mini"))
+            {
+                ShowMini();
+            }
+            else if (page != null)
+            {
+                ShowMain();
+                MainWin.GoTo(page);
+            }
+            else if (!(autostart && settings.StartMinimized))
+            {
+                if (settings.StartInMini) ShowMini();
+                else ShowMain();
+            }
+
+            started = true;
+            statsTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(500), DispatcherPriority.Background, (_, _) => Vm.RefreshStats(), Dispatcher);
+            statsTimer.Start();
+
+            subsTimer = new DispatcherTimer(TimeSpan.FromMinutes(20), DispatcherPriority.Background, async (_, _) => await UpdateSubs(), Dispatcher);
+            subsTimer.Start();
+
+            if (settings.ConnectOnLaunch && settings.AllActive().Any())
+            {
+                await Vpn.ConnectAsync();
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            await UpdateSubs();
+        }
+
+        private static async Task UpdateSubs()
+        {
+            try
+            {
+                await Vpn.UpdateDueAsync();
+                MainWin?.Servers.Reload();
+                Vm.Refresh();
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Обновление подписок: " + ex.Message);
+            }
+        }
+
+        private void OnStateChanged()
+        {
+            VpnState before = lastState;
+            lastState = Vpn.State;
+            Vm.Refresh();
+            Tray.Update();
+            MainWin?.OnStateChanged(before, Vpn.State);
+            Mini?.OnStateChanged(before, Vpn.State);
+            MainWin?.Servers.OnCurrentChanged();
+
+            bool windowsHidden = (MainWin == null || !MainWin.IsVisible) && (Mini == null || !Mini.IsVisible);
+
+            if (windowsHidden && before != Vpn.State)
+            {
+                if (Vpn.State == VpnState.On && before != VpnState.Switching) Tray.Notify("Подключено", Vpn.Current?.DisplayName);
+                else if (Vpn.State == VpnState.Off && before is VpnState.On) Tray.Notify("Отключено", "");
+            }
+        }
+
+        private VpnState lastState = VpnState.Off;
+
+        public static void Notify(string text, bool error)
+        {
+            if (MainWin != null && MainWin.IsVisible && MainWin.WindowState != WindowState.Minimized)
+            {
+                MainWin.Toast(text, error);
+            }
+            else
+            {
+                Tray?.Notify(error ? "Внимание" : "Neon VPN", text, error);
+            }
+        }
+
+        public static void Ui(Action a)
+        {
+            Application app = Current;
+
+            if (app == null)
+            {
+                return;
+            }
+
+            if (app.Dispatcher.CheckAccess()) a();
+            else app.Dispatcher.BeginInvoke(a);
+        }
+
+        public static void ShowMain()
+        {
+            if (Mini != null && Mini.IsVisible)
+            {
+                Mini.SavePlacement();
+                Mini.Hide();
+            }
+
+            MainWin.ShowAndActivate();
+            Vpn.Settings.StartInMini = false;
+        }
+
+        public static void ShowMini()
+        {
+            if (MainWin != null && MainWin.IsVisible)
+            {
+                MainWin.SavePlacement();
+                MainWin.Hide();
+            }
+
+            Mini.ShowAndActivate();
+            Vpn.Settings.StartInMini = true;
+        }
+
+        public static async Task ExitAsync()
+        {
+            App app = (App)Current;
+
+            if (app.exiting)
+            {
+                return;
+            }
+
+            app.exiting = true;
+            MainWin?.SavePlacement();
+            Mini?.SavePlacement();
+            Vpn.Save();
+            Tray?.Dispose();
+            MainWin?.Hide();
+            Mini?.Hide();
+
+            try
+            {
+                await Task.WhenAny(Vpn.ShutdownAsync(), Task.Delay(6000));
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Выход: " + ex.Message);
+            }
+
+            Log.Write("—— выход");
+            app.Shutdown();
+        }
+
+        protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
+        {
+            // Выход из Windows — убираем системный прокси, иначе он останется до следующего входа.
+            Vpn?.ShutdownAsync().Wait(4000);
+            Vpn?.Save();
+            base.OnSessionEnding(e);
+        }
+    }
+}

@@ -1,4 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Проверка ядра без окна: разбор ссылок, сборка конфигов. CI потом прогоняет конфиги через настоящие sing-box и Xray. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
@@ -6,8 +8,9 @@
     <Nullable>disable</Nullable>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
+
   <ItemGroup>
-    <!-- Тот же код ядра, что и в программе. -->
-    <Compile Include="../../src/VPN/Core/*.cs" />
+    <ProjectReference Include="..\..\src\Vpn.Core\Vpn.Core.csproj" />
   </ItemGroup>
+
 </Project>

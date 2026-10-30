@@ -2,7 +2,7 @@ name: build
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "rewrite-neon"]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
@@ -12,10 +12,115 @@ permissions:
 
 env:
   SINGBOX_VERSION: "1.14.3"
+  XRAY_VERSION: "26.10.29"
 
 jobs:
+  # Живая проверка логики на Linux: настоящие sing-box и Xray, локальные тестовые серверы.
+  live:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Cores and test servers
+        run: |
+          set -e
+          mkdir -p app/core
+          curl -sSfL "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/sing-box-${SINGBOX_VERSION}-linux-amd64.tar.gz" | tar xz
+          cp sing-box-${SINGBOX_VERSION}-linux-amd64/sing-box app/core/
+          curl -sSfL -o xray.zip "https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/Xray-linux-64.zip"
+          unzip -q xray.zip -d xray && cp xray/xray app/core/ && chmod +x app/core/*
+          cd tests/LiveCheck
+          openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 2 -subj "/CN=test.local" \
+            -addext "subjectAltName=DNS:test.local,DNS:localhost,IP:127.0.0.1" 2>/dev/null
+          cat /etc/ssl/certs/ca-certificates.crt cert.pem > bundle.pem
+          echo "127.0.0.1 test.local" | sudo tee -a /etc/hosts
+          nohup ../../app/core/xray run -c server.json > server.log 2>&1 &
+          nohup python3 target.py cert.pem key.pem > target.log 2>&1 &
+          sleep 2
+
+      - name: Core checks
+        run: |
+          dotnet run --project tests/CoreCheck -c Release -- app/rules test-configs
+          for f in test-configs/*.singbox.json; do app/core/sing-box check -c "$f" || exit 1; done
+          for f in test-configs/*.xray.json; do app/core/xray run -test -c "$f" > /dev/null || exit 1; done
+
+      - name: Live check
+        run: |
+          SSL_CERT_FILE=$PWD/tests/LiveCheck/bundle.pem NO_PROXY= no_proxy= \
+            dotnet run --project tests/LiveCheck -c Release -- "$PWD/app"
+
+  # То же самое на Windows: настоящие sing-box.exe и xray.exe — ловит то, что на Linux не видно.
+  live-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Cores and test servers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force app/core | Out-Null
+          $v = $env:SINGBOX_VERSION
+          Invoke-WebRequest "https://github.com/SagerNet/sing-box/releases/download/v$v/sing-box-$v-windows-amd64.zip" -OutFile sb.zip
+          Expand-Archive sb.zip -DestinationPath sb
+          Copy-Item "sb/sing-box-$v-windows-amd64/*" app/core/ -Recurse
+          $x = $env:XRAY_VERSION
+          Invoke-WebRequest "https://github.com/XTLS/Xray-core/releases/download/v$x/Xray-windows-64.zip" -OutFile xray.zip
+          Expand-Archive xray.zip -DestinationPath xray
+          Copy-Item xray/xray.exe app/core/
+
+          # Самоподписанный сертификат на test.local — в доверенные, имя — в hosts.
+          $cert = New-SelfSignedCertificate -DnsName "test.local" -CertStoreLocation Cert:/LocalMachine/My -KeyExportPolicy Exportable -NotAfter (Get-Date).AddDays(2)
+          $pwd = ConvertTo-SecureString -String "x" -Force -AsPlainText
+          Export-PfxCertificate -Cert $cert -FilePath tests/LiveCheck/cert.pfx -Password $pwd | Out-Null
+          Export-Certificate -Cert $cert -FilePath cert.cer | Out-Null
+          Import-Certificate -FilePath cert.cer -CertStoreLocation Cert:/LocalMachine/Root | Out-Null
+          Add-Content -Path "$env:SystemRoot/System32/drivers/etc/hosts" -Value "127.0.0.1 test.local"
+          cd tests/LiveCheck
+          python -m pip install --quiet cryptography
+          python -c "from cryptography.hazmat.primitives.serialization import pkcs12, Encoding, PrivateFormat, NoEncryption; k,c,_=pkcs12.load_key_and_certificates(open('cert.pfx','rb').read(), b'x'); open('cert.pem','wb').write(c.public_bytes(Encoding.PEM)); open('key.pem','wb').write(k.private_bytes(Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()))"
+
+      - name: Live check (Windows)
+        shell: pwsh
+        run: |
+          $env:NO_PROXY = ""
+          New-Item -ItemType Directory -Force livewin | Out-Null
+          # Серверы — в этом же шаге: фоновые процессы прошлого шага на Windows-раннере не живут.
+          Push-Location tests/LiveCheck
+          $srv = Start-Process -FilePath "$PWD/../../app/core/xray.exe" -ArgumentList "run","-c","server.json" -RedirectStandardOutput "$PWD/../../livewin/server.log" -RedirectStandardError "$PWD/../../livewin/server.err" -WindowStyle Hidden -PassThru
+          $tgt = Start-Process -FilePath python -ArgumentList "target.py","cert.pem","key.pem" -RedirectStandardOutput "$PWD/../../livewin/target.log" -RedirectStandardError "$PWD/../../livewin/target.err" -WindowStyle Hidden -PassThru
+          Pop-Location
+          Start-Sleep -Seconds 3
+          Get-NetTCPConnection -State Listen | Where-Object { $_.LocalPort -in 30001,30002,30003,30004,18080,18443 } | Format-Table LocalAddress, LocalPort, OwningProcess | Out-String | Tee-Object livewin/listen.txt
+          try { (Invoke-WebRequest -UseBasicParsing https://test.local:18443/generate_204).StatusCode | Tee-Object livewin/https.txt } catch { $_.Exception.Message | Tee-Object livewin/https.txt }
+          dotnet run --project tests/LiveCheck -c Release -- "$PWD/app" 2>&1 | Tee-Object livewin/output.txt
+          $code = $LASTEXITCODE
+          Copy-Item app/data/vpn.log livewin/ -ErrorAction SilentlyContinue
+          Copy-Item app/data/run/*.json livewin/ -ErrorAction SilentlyContinue
+          exit $code
+
+      - name: Publish live check results
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/lw && cp -r livewin/* /tmp/lw/ 2>/dev/null; echo "$GITHUB_SHA" > /tmp/lw/sha.txt; cd /tmp/lw
+          git init -q && git config user.name ci && git config user.email ci@users.noreply.github.com
+          git add -A && git commit -qm "live-windows for $GITHUB_SHA"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}" HEAD:ci-live-windows
+
   build:
     runs-on: windows-latest
+    needs: live
     steps:
       - uses: actions/checkout@v4
 
@@ -26,40 +131,91 @@ jobs:
       - name: Publish VPN.exe
         shell: pwsh
         run: |
-          dotnet publish src/VPN/VPN.csproj -c Release -r win-x64 --self-contained true `
+          dotnet publish src/Vpn.App/Vpn.App.csproj -c Release -r win-x64 --self-contained true `
             -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
             -p:EnableCompressionInSingleFile=true -p:DebugType=none -o out/VPN 2>&1 | Tee-Object -FilePath build.log
           if ($LASTEXITCODE -ne 0) { throw "publish failed" }
 
-      - name: Bundle sing-box and rule sets
+      - name: Bundle sing-box, Xray and rule sets
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $v = $env:SINGBOX_VERSION
           New-Item -ItemType Directory -Force out/VPN/core, out/VPN/rules | Out-Null
+
+          $v = $env:SINGBOX_VERSION
           Invoke-WebRequest "https://github.com/SagerNet/sing-box/releases/download/v$v/sing-box-$v-windows-amd64.zip" -OutFile sb.zip
           Expand-Archive sb.zip -DestinationPath sb
           Copy-Item "sb/sing-box-$v-windows-amd64/*" out/VPN/core/ -Recurse
+
+          $x = $env:XRAY_VERSION
+          Invoke-WebRequest "https://github.com/XTLS/Xray-core/releases/download/v$x/Xray-windows-64.zip" -OutFile xray.zip
+          Expand-Archive xray.zip -DestinationPath xray
+          Copy-Item xray/xray.exe, xray/geoip.dat, xray/geosite.dat out/VPN/core/
+
           $rules = @{
             "geoip-ru.srs" = "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ru.srs";
             "geosite-category-ru.srs" = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ru.srs";
             "geosite-category-ads-all.srs" = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-all.srs"
           }
           foreach ($k in $rules.Keys) { Invoke-WebRequest $rules[$k] -OutFile "out/VPN/rules/$k" }
+
           & out/VPN/core/sing-box.exe version
+          & out/VPN/core/xray.exe version
           Get-ChildItem -Recurse out/VPN | Select-Object FullName, Length | Format-Table -AutoSize
 
-      - name: Check generated config with sing-box
+      - name: Check configs with the Windows cores
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          dotnet run --project tests/ConfigCheck/ConfigCheck.csproj -c Release -- out/VPN/rules test-config.json 2>&1 | Tee-Object -FilePath build.log -Append
-          if ($LASTEXITCODE -ne 0) { throw "ConfigCheck failed" }
-          foreach ($f in @("test-config.json", "test-config.direct.json")) {
-            & out/VPN/core/sing-box.exe check -c $f 2>&1 | Tee-Object -FilePath build.log -Append
-            if ($LASTEXITCODE -ne 0) { Get-Content $f | Add-Content build.log; throw "sing-box rejected $f" }
+          dotnet run --project tests/CoreCheck/CoreCheck.csproj -c Release -- out/VPN/rules test-configs 2>&1 | Tee-Object -FilePath build.log -Append
+          if ($LASTEXITCODE -ne 0) { throw "CoreCheck failed" }
+          foreach ($f in Get-ChildItem test-configs -Filter *.singbox.json) {
+            & out/VPN/core/sing-box.exe check -c $f.FullName 2>&1 | Tee-Object -FilePath build.log -Append
+            if ($LASTEXITCODE -ne 0) { Get-Content $f.FullName | Add-Content build.log; throw "sing-box rejected $($f.Name)" }
           }
-          Write-Host "Config OK"
+          foreach ($f in Get-ChildItem test-configs -Filter *.xray.json) {
+            & out/VPN/core/xray.exe run -test -c $f.FullName 2>&1 | Tee-Object -FilePath build.log -Append
+            if ($LASTEXITCODE -ne 0) { throw "xray rejected $($f.Name)" }
+          }
+          Write-Host "Configs OK"
+
+      - name: Smoke test (launch VPN.exe on every screen, screenshots, logs)
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+          New-Item -ItemType Directory -Force smoke | Out-Null
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          function Shot($name) {
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            $bmp.Save("smoke/$name.png", [System.Drawing.Imaging.ImageFormat]::Png)
+          }
+          if (-not (Test-Path out/VPN/VPN.exe)) { "no VPN.exe — build failed" | Set-Content smoke/result.txt; exit 0 }
+          foreach ($run in @(@{ n = "home"; a = "--page=home" }, @{ n = "servers"; a = "--page=servers" }, @{ n = "tunnels"; a = "--page=tunnels" }, @{ n = "settings"; a = "--page=settings" }, @{ n = "mini"; a = "--mini" })) {
+            $p = Start-Process -FilePath "out/VPN/VPN.exe" -ArgumentList $run.a -PassThru
+            Start-Sleep -Seconds 9
+            "$($run.n): alive=$(-not $p.HasExited)" | Add-Content smoke/result.txt
+            Shot $run.n
+            Stop-Process -Name VPN, sing-box, xray -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+          }
+          Copy-Item "$env:LOCALAPPDATA/NeonVPN/vpn.log", "$env:LOCALAPPDATA/NeonVPN/crash.log" smoke/ -ErrorAction SilentlyContinue
+          Get-Content smoke/result.txt
+          if (Test-Path smoke/crash.log) { Get-Content smoke/crash.log; throw "crash on start" }
+
+      - name: Publish smoke results
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/smoke && cp -r smoke/* /tmp/smoke/ 2>/dev/null; cp build.log /tmp/smoke/ 2>/dev/null; cd /tmp/smoke
+          git init -q && git config user.name ci && git config user.email ci@users.noreply.github.com
+          git add -A && git commit -qm "smoke for $GITHUB_SHA"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}" HEAD:ci-smoke
 
       - name: Publish build log on failure
         if: failure()
