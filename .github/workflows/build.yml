@@ -95,10 +95,23 @@ jobs:
         shell: pwsh
         run: |
           $env:NO_PROXY = ""
-          dotnet run --project tests/LiveCheck -c Release -- "$PWD/app"
+          New-Item -ItemType Directory -Force livewin | Out-Null
+          dotnet run --project tests/LiveCheck -c Release -- "$PWD/app" 2>&1 | Tee-Object livewin/output.txt
           $code = $LASTEXITCODE
-          Get-Content app/data/vpn.log -ErrorAction SilentlyContinue | Select-Object -Last 40
+          Copy-Item app/data/vpn.log, app/data/run/*.json livewin/ -ErrorAction SilentlyContinue
+          Copy-Item tests/LiveCheck/server.log, tests/LiveCheck/server.err, tests/LiveCheck/target.err livewin/ -ErrorAction SilentlyContinue
           exit $code
+
+      - name: Publish live check results
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/lw && cp -r livewin/* /tmp/lw/ 2>/dev/null; echo "$GITHUB_SHA" > /tmp/lw/sha.txt; cd /tmp/lw
+          git init -q && git config user.name ci && git config user.email ci@users.noreply.github.com
+          git add -A && git commit -qm "live-windows for $GITHUB_SHA"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}" HEAD:ci-live-windows
 
   build:
     runs-on: windows-latest
