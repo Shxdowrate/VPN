@@ -1,0 +1,49 @@
+Xray 26.10.29 (Xray, Penetrates Everything.) 0afec66 (go1.27.3 windows/amd64)
+A unified platform for anti-censorship.
+2026/10/30 14:30:39.315048 [Info] infra/conf/serial: Reading config: &{Name:server.json Format:json}
+2026/10/30 14:30:39.316187 [Warning] common/errors: The feature WebSocket transport (with ALPN http/1.1, etc.) is deprecated, not recommended for using and might be removed. Please migrate to XHTTP H2 & H3 as soon as possible.
+2026/10/30 14:30:39.316187 [Warning] common/errors: The feature VMess (with no Forward Secrecy, etc.) is deprecated, not recommended for using and might be removed. Please migrate to VLESS Encryption as soon as possible.
+2026/10/30 14:30:39.316187 [Warning] common/errors: The feature Shadowsocks (with no Forward Secrecy, etc.) is deprecated, not recommended for using and might be removed. Please migrate to VLESS Encryption as soon as possible.
+2026/10/30 14:30:39.321641 [Warning] core: Xray 26.10.29 started
+2026/10/30 14:31:05.649300 from 127.0.0.1:62101 accepted tcp:test.local:18443
+2026/10/30 14:31:05.653163 from 127.0.0.1:62107 accepted tcp:test.local:18443
+2026/10/30 14:31:05.654686 from 127.0.0.1:62109 accepted tcp:test.local:18443
+2026/10/30 14:31:05.660217 from 127.0.0.1:62110 accepted tcp:test.local:18443
+2026/10/30 14:31:06.298405 from 127.0.0.1:62118 accepted tcp:test.local:18443
+2026/10/30 14:31:06.298405 from 127.0.0.1:62124 accepted tcp:test.local:18443
+2026/10/30 14:31:06.299124 from 127.0.0.1:62127 accepted tcp:test.local:18443
+2026/10/30 14:31:06.301172 from 127.0.0.1:62131 accepted tcp:test.local:18443
+2026/10/30 14:31:06.333910 from 127.0.0.1:62134 accepted tcp:test.local:18443
+2026/10/30 14:31:06.336797 from 127.0.0.1:62136 accepted tcp:test.local:18443
+2026/10/30 14:31:06.339564 from 127.0.0.1:62138 accepted tcp:test.local:18443
+2026/10/30 14:31:06.374572 from 127.0.0.1:62142 accepted tcp:test.local:18443
+2026/10/30 14:31:07.035792 from 127.0.0.1:62149 accepted tcp:test.local:18080
+2026/10/30 14:31:07.041075 from 127.0.0.1:62152 accepted tcp:test.local:18080
+2026/10/30 14:31:13.092079 from 127.0.0.1:62158 accepted tcp:test.local:18443
+2026/10/30 14:31:16.040478 from 127.0.0.1:62169 accepted tcp:test.local:18080
+2026/10/30 14:31:16.046411 from 127.0.0.1:62173 accepted tcp:test.local:18080
+2026/10/30 14:31:16.712307 from 127.0.0.1:62176 accepted tcp:test.local:18443
+2026/10/30 14:31:19.039187 from 127.0.0.1:62181 accepted tcp:test.local:18443
+2026/10/30 14:31:22.050383 from 127.0.0.1:62184 accepted tcp:test.local:18443
+2026/10/30 14:31:28.262694 from 127.0.0.1:62190 accepted tcp:test.local:18080
+2026/10/30 14:31:30.801485 from 127.0.0.1:62208 accepted tcp:test.local:18443
+2026/10/30 14:31:30.803308 from 127.0.0.1:62209 accepted tcp:test.local:18443
+2026/10/30 14:31:30.803308 from 127.0.0.1:62214 accepted tcp:test.local:18443
+2026/10/30 14:31:30.803308 from 127.0.0.1:62213 accepted tcp:test.local:18443
+2026/10/30 14:31:33.343460 from 127.0.0.1:62235 accepted tcp:test.local:18443
+2026/10/30 14:31:33.344139 from 127.0.0.1:62237 accepted tcp:test.local:18443
+2026/10/30 14:31:33.344139 from 127.0.0.1:62236 accepted tcp:test.local:18443
+2026/10/30 14:31:33.346703 from 127.0.0.1:62234 accepted tcp:test.local:18443
+2026/10/30 14:31:33.395853 from 127.0.0.1:62248 accepted tcp:test.local:18443
+2026/10/30 14:31:33.398372 from 127.0.0.1:62250 accepted tcp:test.local:18443
+2026/10/30 14:31:33.400753 from 127.0.0.1:62254 accepted tcp:test.local:18443
+2026/10/30 14:31:33.405291 from 127.0.0.1:62257 accepted tcp:test.local:18443
+2026/10/30 14:31:39.386966 from 127.0.0.1:62273 accepted tcp:test.local:18080
+2026/10/30 14:31:39.391897 from 127.0.0.1:62277 accepted tcp:test.local:18080
+2026/10/30 14:31:45.421828 from 127.0.0.1:62289 accepted tcp:test.local:18443
+2026/10/30 14:31:48.372920 from 127.0.0.1:62295 accepted tcp:test.local:18080
+2026/10/30 14:31:48.378980 from 127.0.0.1:62299 accepted tcp:test.local:18080
+2026/10/30 14:31:48.383057 from 127.0.0.1:62305 accepted tcp:test.local:18443
+2026/10/30 14:31:51.494516 from 127.0.0.1:62313 accepted tcp:test.local:18443
+2026/10/30 14:31:54.505995 from 127.0.0.1:62317 accepted tcp:test.local:18443
+2026/10/30 14:32:01.890949 from 127.0.0.1:62329 accepted tcp:test.local:18080

@@ -1,0 +1,253 @@
+{
+  "log": {
+    "loglevel": "info",
+    "access": "none"
+  },
+  "inbounds": [
+    {
+      "tag": "in-n0",
+      "listen": "127.0.0.1",
+      "port": 21100,
+      "protocol": "socks",
+      "settings": {
+        "auth": "password",
+        "accounts": [
+          {
+            "user": "nv",
+            "pass": "4da9cb00b21a4ed7"
+          }
+        ],
+        "udp": true,
+        "ip": "127.0.0.1"
+      }
+    },
+    {
+      "tag": "in-n1",
+      "listen": "127.0.0.1",
+      "port": 21101,
+      "protocol": "socks",
+      "settings": {
+        "auth": "password",
+        "accounts": [
+          {
+            "user": "nv",
+            "pass": "4da9cb00b21a4ed7"
+          }
+        ],
+        "udp": true,
+        "ip": "127.0.0.1"
+      }
+    },
+    {
+      "tag": "in-n2",
+      "listen": "127.0.0.1",
+      "port": 21102,
+      "protocol": "socks",
+      "settings": {
+        "auth": "password",
+        "accounts": [
+          {
+            "user": "nv",
+            "pass": "4da9cb00b21a4ed7"
+          }
+        ],
+        "udp": true,
+        "ip": "127.0.0.1"
+      }
+    },
+    {
+      "tag": "in-n3",
+      "listen": "127.0.0.1",
+      "port": 21103,
+      "protocol": "socks",
+      "settings": {
+        "auth": "password",
+        "accounts": [
+          {
+            "user": "nv",
+            "pass": "4da9cb00b21a4ed7"
+          }
+        ],
+        "udp": true,
+        "ip": "127.0.0.1"
+      }
+    },
+    {
+      "tag": "in-n4",
+      "listen": "127.0.0.1",
+      "port": 21104,
+      "protocol": "socks",
+      "settings": {
+        "auth": "password",
+        "accounts": [
+          {
+            "user": "nv",
+            "pass": "4da9cb00b21a4ed7"
+          }
+        ],
+        "udp": true,
+        "ip": "127.0.0.1"
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "block",
+      "protocol": "blackhole"
+    },
+    {
+      "tag": "n0",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "127.0.0.1",
+            "port": 30001,
+            "users": [
+              {
+                "id": "6f1c3a52-1b1e-4a5a-9c39-1a2b3c4d5e6f",
+                "encryption": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "raw",
+        "security": "none"
+      }
+    },
+    {
+      "tag": "n1",
+      "protocol": "vmess",
+      "settings": {
+        "vnext": [
+          {
+            "address": "127.0.0.1",
+            "port": 30002,
+            "users": [
+              {
+                "id": "6f1c3a52-1b1e-4a5a-9c39-1a2b3c4d5e6f",
+                "security": "auto"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "ws",
+        "wsSettings": {
+          "path": "/ws"
+        },
+        "security": "none"
+      }
+    },
+    {
+      "tag": "n2",
+      "protocol": "shadowsocks",
+      "settings": {
+        "servers": [
+          {
+            "address": "127.0.0.1",
+            "port": 30003,
+            "method": "chacha20-ietf-poly1305",
+            "password": "pass123",
+            "uot": true
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "raw",
+        "security": "none"
+      }
+    },
+    {
+      "tag": "n3",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "127.0.0.1",
+            "port": 30004,
+            "users": [
+              {
+                "id": "6f1c3a52-1b1e-4a5a-9c39-1a2b3c4d5e6f",
+                "encryption": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "xhttpSettings": {
+          "path": "/xh",
+          "mode": "packet-up"
+        },
+        "security": "none"
+      }
+    },
+    {
+      "tag": "n4",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "127.0.0.1",
+            "port": 30999,
+            "users": [
+              {
+                "id": "6f1c3a52-1b1e-4a5a-9c39-1a2b3c4d5e6f",
+                "encryption": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "raw",
+        "security": "none"
+      }
+    }
+  ],
+  "routing": {
+    "domainStrategy": "AsIs",
+    "rules": [
+      {
+        "type": "field",
+        "inboundTag": [
+          "in-n0"
+        ],
+        "outboundTag": "n0"
+      },
+      {
+        "type": "field",
+        "inboundTag": [
+          "in-n1"
+        ],
+        "outboundTag": "n1"
+      },
+      {
+        "type": "field",
+        "inboundTag": [
+          "in-n2"
+        ],
+        "outboundTag": "n2"
+      },
+      {
+        "type": "field",
+        "inboundTag": [
+          "in-n3"
+        ],
+        "outboundTag": "n3"
+      },
+      {
+        "type": "field",
+        "inboundTag": [
+          "in-n4"
+        ],
+        "outboundTag": "n4"
+      }
+    ]
+  }
+}

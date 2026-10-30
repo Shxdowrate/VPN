@@ -1,0 +1,22 @@
+14:31:06  Лучший в «все серверы»: VMess-ws (9 мс) — зафиксирован
+14:31:07  Подключено: VMess-ws (системный прокси, ядро sing-box, серверов в работе 5)
+14:31:10  Подключено: VMess-ws (системный прокси, ядро sing-box, серверов в работе 5)
+14:31:16  Подключено: VMess-ws (системный прокси, ядро sing-box, серверов в работе 5)
+14:31:16  Сервер: SS
+14:31:16  Сервер: VLESS-xhttp
+14:31:16  Сервер: VMess-ws
+14:31:16  Авто: VLESS-xhttp → VMess-ws (выбрано «Авто»)
+14:31:24  [main] ядро закрылось само. xray: Xray 26.10.29 (Xray, Penetrates Everything.) 0afec66 (go1.27.3 windows/amd64) | xray: A unified platform for anti-censorship. | xray: 2026/10/30 14:31:15.574243 [Warning] core: Xray 26.10.29 started
+14:31:26  Подключено: VMess-ws (системный прокси, ядро sing-box, серверов в работе 5)
+14:31:32  [probe/xray] Dead: dial tcp 127.0.0.1:30999: connectex: No connection could be made because the target machine actively refused it.
+14:31:38  Лучший в «все серверы»: VLESS-tcp (12 мс) — зафиксирован
+14:31:39  Подключено: VLESS-tcp (системный прокси, ядро Xray, серверов в работе 5)
+14:31:42  Подключено: VLESS-tcp (системный прокси, ядро Xray, серверов в работе 5)
+14:31:48  Подключено: VLESS-tcp (системный прокси, ядро Xray, серверов в работе 5)
+14:31:48  Сервер: SS
+14:31:48  Сервер: VLESS-xhttp
+14:31:50  [main/xray] Dead: dial tcp 127.0.0.1:30999: connectex: No connection could be made because the target machine actively refused it.
+14:31:50  Сервер: VMess-ws
+14:31:50  Авто: VLESS-xhttp → VMess-ws (выбрано «Авто»)
+14:31:57  [main] ядро закрылось само. xray: Xray 26.10.29 (Xray, Penetrates Everything.) 0afec66 (go1.27.3 windows/amd64) | xray: A unified platform for anti-censorship. | xray: 2026/10/30 14:31:47.913481 [Warning] core: Xray 26.10.29 started
+14:32:00  Подключено: VMess-ws (системный прокси, ядро Xray, серверов в работе 5)
