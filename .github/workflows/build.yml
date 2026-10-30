@@ -128,6 +128,7 @@ jobs:
             $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
             $bmp.Save("smoke/$name.png", [System.Drawing.Imaging.ImageFormat]::Png)
           }
+          if (-not (Test-Path out/VPN/VPN.exe)) { "no VPN.exe — build failed" | Set-Content smoke/result.txt; exit 0 }
           foreach ($run in @(@{ n = "home"; a = "--page=home" }, @{ n = "servers"; a = "--page=servers" }, @{ n = "tunnels"; a = "--page=tunnels" }, @{ n = "settings"; a = "--page=settings" }, @{ n = "mini"; a = "--mini" })) {
             $p = Start-Process -FilePath "out/VPN/VPN.exe" -ArgumentList $run.a -PassThru
             Start-Sleep -Seconds 9

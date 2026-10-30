@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Media;
@@ -9,10 +10,10 @@ namespace NeonVpn.Controls
     public sealed class Sparkline : FrameworkElement
     {
         public static readonly DependencyProperty DownProperty =
-            DependencyProperty.Register(nameof(Down), typeof(double[]), typeof(Sparkline), new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
+            DependencyProperty.Register(nameof(Down), typeof(IReadOnlyList<double>), typeof(Sparkline), new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
 
         public static readonly DependencyProperty UpProperty =
-            DependencyProperty.Register(nameof(Up), typeof(double[]), typeof(Sparkline), new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
+            DependencyProperty.Register(nameof(Up), typeof(IReadOnlyList<double>), typeof(Sparkline), new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
 
         public static readonly DependencyProperty ColorProperty =
             DependencyProperty.Register(nameof(Color), typeof(Color), typeof(Sparkline), new FrameworkPropertyMetadata(Color.FromRgb(0x76, 0xFF, 0x03), FrameworkPropertyMetadataOptions.AffectsRender));
@@ -23,15 +24,16 @@ namespace NeonVpn.Controls
         /// <summary>Сколько точек показывать (окно по времени).</summary>
         public int Points { get; set; } = 60;
 
-        public double[] Down
+        // Не массив: свойства-массивы нельзя привязывать внутри шаблонов XAML (ошибка MC4102).
+        public IReadOnlyList<double> Down
         {
-            get => (double[])GetValue(DownProperty);
+            get => (IReadOnlyList<double>)GetValue(DownProperty);
             set => SetValue(DownProperty, value);
         }
 
-        public double[] Up
+        public IReadOnlyList<double> Up
         {
-            get => (double[])GetValue(UpProperty);
+            get => (IReadOnlyList<double>)GetValue(UpProperty);
             set => SetValue(UpProperty, value);
         }
 
@@ -66,29 +68,29 @@ namespace NeonVpn.Controls
                 dc.DrawLine(grid, new Point(0, y), new Point(w, y));
             }
 
-            double[] down = Down ?? Array.Empty<double>();
-            double[] up = Up ?? Array.Empty<double>();
+            IReadOnlyList<double> down = Down ?? Array.Empty<double>();
+            IReadOnlyList<double> up = Up ?? Array.Empty<double>();
             double max = Math.Max(16 * 1024, Math.Max(down.DefaultIfEmpty(0).Max(), up.DefaultIfEmpty(0).Max())) * 1.15;
 
             DrawSeries(dc, down, max, w, h, Color, filled: true);
             DrawSeries(dc, up, max, w, h, Color2, filled: false);
         }
 
-        private void DrawSeries(DrawingContext dc, double[] values, double max, double w, double h, Color c, bool filled)
+        private void DrawSeries(DrawingContext dc, IReadOnlyList<double> values, double max, double w, double h, Color c, bool filled)
         {
-            if (values.Length < 2)
+            if (values.Count < 2)
             {
                 return;
             }
 
-            int n = Math.Min(values.Length, Points);
+            int n = Math.Min(values.Count, Points);
             double step = w / (Points - 1);
             double x0 = w - step * (n - 1);
 
             StreamGeometry line = new StreamGeometry();
             StreamGeometry area = new StreamGeometry();
 
-            Point P(int i) => new Point(x0 + step * i, h - 2 - (h - 4) * Math.Min(1, values[values.Length - n + i] / max));
+            Point P(int i) => new Point(x0 + step * i, h - 2 - (h - 4) * Math.Min(1, values[values.Count - n + i] / max));
 
             using (StreamGeometryContext l = line.Open())
             using (StreamGeometryContext a = area.Open())
