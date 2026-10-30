@@ -1,0 +1,109 @@
+  Determining projects to restore...
+  Restored D:\a\VPN\VPN\src\Vpn.Core\Vpn.Core.csproj (in 8.29 sec).
+  Restored D:\a\VPN\VPN\src\Vpn.App\Vpn.App.csproj (in 8.29 sec).
+  Vpn.Core -> D:\a\VPN\VPN\src\Vpn.Core\bin\Release\net8.0\NeonVpn.Core.dll
+D:\a\VPN\VPN\src\Vpn.App\App.xaml.cs(150,13): warning CS4014: Because this call is not awaited, execution of the current method continues before the call is completed. Consider applying the 'await' operator to the result of the call. [D:\a\VPN\VPN\src\Vpn.App\Vpn.App_virujb30_wpftmp.csproj]
+CSC : warning WFAC010: Remove high DPI settings from D:\a\VPN\VPN\src\Vpn.App\app.manifest and configure via Application.SetHighDpiMode API or 'ApplicationHighDpiMode' project property [D:\a\VPN\VPN\src\Vpn.App\Vpn.App_virujb30_wpftmp.csproj]
+D:\a\VPN\VPN\src\Vpn.App\App.xaml.cs(150,13): warning CS4014: Because this call is not awaited, execution of the current method continues before the call is completed. Consider applying the 'await' operator to the result of the call. [D:\a\VPN\VPN\src\Vpn.App\Vpn.App.csproj]
+CSC : warning WFAC010: Remove high DPI settings from D:\a\VPN\VPN\src\Vpn.App\app.manifest and configure via Application.SetHighDpiMode API or 'ApplicationHighDpiMode' project property [D:\a\VPN\VPN\src\Vpn.App\Vpn.App.csproj]
+  Vpn.App -> D:\a\VPN\VPN\src\Vpn.App\bin\Release\net8.0-windows\win-x64\VPN.dll
+  Vpn.App -> D:\a\VPN\VPN\out\VPN\
+Разбор ссылок:
+  ok   base64-подписка: 10 из 10, пропущено 0
+  ok   флаг и имя: DE / Germany Reality
+  ok   IPv6-адрес
+  ok   vmess json
+  ok   ss base64 userinfo
+  ok   socks base64 логин
+Подписки:
+  ok   обновление: +1 -0
+  ok   выключенный сервер остался выключенным
+  ok   новый сервер сразу выключен (NewServersOff)
+  ok   активных: 9
+  ok   группа: выключенные не попадают в авто-выбор
+  ok   область подписки
+Конфиги:
+  ok   singbox-tun: серверов 9, через Xray 1, пропущено 0
+  ok   singbox-tun: xhttp ушёл в Xray
+  ok   singbox-tun: стартовый сервер
+  ok   singbox-mixed: серверов 9, через Xray 1, пропущено 0
+  ok   singbox-mixed: xhttp ушёл в Xray
+  ok   singbox-mixed: стартовый сервер
+  ok   xray-tun: серверов 9, через Xray 7, пропущено 0
+  ok   xray-tun: Hy2/TUIC остались на sing-box
+  ok   xray-tun: стартовый сервер
+  ok   xray-proxy: серверов 9, через Xray 7, пропущено 0
+  ok   xray-proxy: Hy2/TUIC остались на sing-box
+  ok   xray-proxy: стартовый сервер
+  ok   probe-singbox: серверов 9, через Xray 1, пропущено 0
+  ok   probe-singbox: xhttp ушёл в Xray
+  ok   probe-singbox: стартовый сервер
+  ok   probe-xray: серверов 9, через Xray 7, пропущено 0
+  ok   probe-xray: Hy2/TUIC остались на sing-box
+  ok   probe-xray: стартовый сервер
+  ok   hints-singbox: DoH для адресов серверов
+  ok   hints-xray: DoH для адресов серверов
+  ok   нормализация домена
+  ok   кириллический домен → punycode
+Всё в порядке.
+Xray 26.10.29 (Xray, Penetrates Everything.) 0afec66 (go1.27.3 windows/amd64)
+A unified platform for anti-censorship.
+2026/10/30 14:32:10.706767 [Info] infra/conf/serial: Reading config: &{Name:D:\a\VPN\VPN\test-configs\hints-singbox.xray.json Format:json}
+2026/10/30 14:32:10.710358 [Warning] common/errors: This feature "fragment" in Freedom is deprecated, will be removed soon and being migrated to "fragment" in "streamSettings.finalmask.tcp". Please update your config(s) according to release note and documentation before removal.
+2026/10/30 14:32:10.710358 [Warning] common/errors: This feature "noises" in Freedom is deprecated, will be removed soon and being migrated to "noise" in "streamSettings.finalmask.udp". Please update your config(s) according to release note and documentation before removal.
+2026/10/30 14:32:10.710358 [Info] app/dns: DNS: created DOHL client for https://dns.google/dns-query, with h2c false
+Configuration OK.
+Xray 26.10.29 (Xray, Penetrates Everything.) 0afec66 (go1.27.3 windows/amd64)
+A unified platform for anti-censorship.
+2026/10/30 14:32:10.754099 [Info] infra/conf/serial: Reading config: &{Name:D:\a\VPN\VPN\test-configs\hints-xray.xray.json Format:json}
+2026/10/30 14:32:10.757655 [Warning] common/errors: The feature HTTPUpgrade transport (with ALPN http/1.1, etc.) is deprecated, not recommended for using and might be removed. Please migrate to XHTTP H2 & H3 as soon as possible.
+2026/10/30 14:32:10.757655 [Warning] common/errors: The feature WebSocket transport (with ALPN http/1.1, etc.) is deprecated, not recommended for using and might be removed. Please migrate to XHTTP H2 & H3 as soon as possible.
+2026/10/30 14:32:10.757655 [Warning] common/errors: The feature VMess (with no Forward Secrecy, etc.) is deprecated, not recommended for using and might be removed. Please migrate to VLESS Encryption as soon as possible.
+2026/10/30 14:32:10.757655 [Warning] common/errors: The feature WebSocket transport (with ALPN http/1.1, etc.) is deprecated, not recommended for using and might be removed. Please migrate to XHTTP H2 & H3 as soon as possible.
+2026/10/30 14:32:10.757655 [Warning] common/errors: The feature Trojan (with no Flow, etc.) is deprecated, not recommended for using and might be removed. Please migrate to VLESS with Flow & Seed as soon as possible.
+2026/10/30 14:32:10.757655 [Warning] common/errors: The feature Shadowsocks (with no Forward Secrecy, etc.) is deprecated, not recommended for using and might be removed. Please migrate to VLESS Encryption as soon as possible.
+2026/10/30 14:32:10.758423 [Warning] common/errors: This feature "fragment" in Freedom is deprecated, will be removed soon and being migrated to "fragment" in "streamSettings.finalmask.tcp". Please update your config(s) according to release note and documentation before removal.
+2026/10/30 14:32:10.758423 [Warning] common/errors: This feature "noises" in Freedom is deprecated, will be removed soon and being migrated to "noise" in "streamSettings.finalmask.udp". Please update your config(s) according to release note and documentation before removal.
+Configuration OK.
+Xray 26.10.29 (Xray, Penetrates Everything.) 0afec66 (go1.27.3 windows/amd64)
+A unified platform for anti-censorship.
+2026/10/30 14:32:10.798470 [Info] infra/conf/serial: Reading config: &{Name:D:\a\VPN\VPN\test-configs\probe-singbox.xray.json Format:json}
+Configuration OK.
+Xray 26.10.29 (Xray, Penetrates Everything.) 0afec66 (go1.27.3 windows/amd64)
+A unified platform for anti-censorship.
+2026/10/30 14:32:10.870139 [Info] infra/conf/serial: Reading config: &{Name:D:\a\VPN\VPN\test-configs\probe-xray.xray.json Format:json}
+2026/10/30 14:32:10.872525 [Warning] common/errors: The feature HTTPUpgrade transport (with ALPN http/1.1, etc.) is deprecated, not recommended for using and might be removed. Please migrate to XHTTP H2 & H3 as soon as possible.
+2026/10/30 14:32:10.872525 [Warning] common/errors: The feature WebSocket transport (with ALPN http/1.1, etc.) is deprecated, not recommended for using and might be removed. Please migrate to XHTTP H2 & H3 as soon as possible.
+2026/10/30 14:32:10.872525 [Warning] common/errors: The feature VMess (with no Forward Secrecy, etc.) is deprecated, not recommended for using and might be removed. Please migrate to VLESS Encryption as soon as possible.
+2026/10/30 14:32:10.872525 [Warning] common/errors: The feature WebSocket transport (with ALPN http/1.1, etc.) is deprecated, not recommended for using and might be removed. Please migrate to XHTTP H2 & H3 as soon as possible.
+2026/10/30 14:32:10.872525 [Warning] common/errors: The feature Trojan (with no Flow, etc.) is deprecated, not recommended for using and might be removed. Please migrate to VLESS with Flow & Seed as soon as possible.
+2026/10/30 14:32:10.873372 [Warning] common/errors: The feature Shadowsocks (with no Forward Secrecy, etc.) is deprecated, not recommended for using and might be removed. Please migrate to VLESS Encryption as soon as possible.
+Configuration OK.
+Xray 26.10.29 (Xray, Penetrates Everything.) 0afec66 (go1.27.3 windows/amd64)
+A unified platform for anti-censorship.
+2026/10/30 14:32:10.916394 [Info] infra/conf/serial: Reading config: &{Name:D:\a\VPN\VPN\test-configs\singbox-mixed.xray.json Format:json}
+Configuration OK.
+Xray 26.10.29 (Xray, Penetrates Everything.) 0afec66 (go1.27.3 windows/amd64)
+A unified platform for anti-censorship.
+2026/10/30 14:32:10.956512 [Info] infra/conf/serial: Reading config: &{Name:D:\a\VPN\VPN\test-configs\singbox-tun.xray.json Format:json}
+Configuration OK.
+Xray 26.10.29 (Xray, Penetrates Everything.) 0afec66 (go1.27.3 windows/amd64)
+A unified platform for anti-censorship.
+2026/10/30 14:32:10.994768 [Info] infra/conf/serial: Reading config: &{Name:D:\a\VPN\VPN\test-configs\xray-proxy.xray.json Format:json}
+2026/10/30 14:32:10.996639 [Warning] common/errors: The feature HTTPUpgrade transport (with ALPN http/1.1, etc.) is deprecated, not recommended for using and might be removed. Please migrate to XHTTP H2 & H3 as soon as possible.
+2026/10/30 14:32:10.996639 [Warning] common/errors: The feature WebSocket transport (with ALPN http/1.1, etc.) is deprecated, not recommended for using and might be removed. Please migrate to XHTTP H2 & H3 as soon as possible.
+2026/10/30 14:32:10.996639 [Warning] common/errors: The feature VMess (with no Forward Secrecy, etc.) is deprecated, not recommended for using and might be removed. Please migrate to VLESS Encryption as soon as possible.
+2026/10/30 14:32:10.996639 [Warning] common/errors: The feature WebSocket transport (with ALPN http/1.1, etc.) is deprecated, not recommended for using and might be removed. Please migrate to XHTTP H2 & H3 as soon as possible.
+2026/10/30 14:32:10.996639 [Warning] common/errors: The feature Trojan (with no Flow, etc.) is deprecated, not recommended for using and might be removed. Please migrate to VLESS with Flow & Seed as soon as possible.
+2026/10/30 14:32:10.996639 [Warning] common/errors: The feature Shadowsocks (with no Forward Secrecy, etc.) is deprecated, not recommended for using and might be removed. Please migrate to VLESS Encryption as soon as possible.
+Configuration OK.
+Xray 26.10.29 (Xray, Penetrates Everything.) 0afec66 (go1.27.3 windows/amd64)
+A unified platform for anti-censorship.
+2026/10/30 14:32:11.036420 [Info] infra/conf/serial: Reading config: &{Name:D:\a\VPN\VPN\test-configs\xray-tun.xray.json Format:json}
+2026/10/30 14:32:11.038307 [Warning] common/errors: The feature HTTPUpgrade transport (with ALPN http/1.1, etc.) is deprecated, not recommended for using and might be removed. Please migrate to XHTTP H2 & H3 as soon as possible.
+2026/10/30 14:32:11.038307 [Warning] common/errors: The feature WebSocket transport (with ALPN http/1.1, etc.) is deprecated, not recommended for using and might be removed. Please migrate to XHTTP H2 & H3 as soon as possible.
+2026/10/30 14:32:11.038307 [Warning] common/errors: The feature VMess (with no Forward Secrecy, etc.) is deprecated, not recommended for using and might be removed. Please migrate to VLESS Encryption as soon as possible.
+2026/10/30 14:32:11.038307 [Warning] common/errors: The feature WebSocket transport (with ALPN http/1.1, etc.) is deprecated, not recommended for using and might be removed. Please migrate to XHTTP H2 & H3 as soon as possible.
+2026/10/30 14:32:11.038307 [Warning] common/errors: The feature Trojan (with no Flow, etc.) is deprecated, not recommended for using and might be removed. Please migrate to VLESS with Flow & Seed as soon as possible.
+2026/10/30 14:32:11.038307 [Warning] common/errors: The feature Shadowsocks (with no Forward Secrecy, etc.) is deprecated, not recommended for using and might be removed. Please migrate to VLESS Encryption as soon as possible.
+Configuration OK.

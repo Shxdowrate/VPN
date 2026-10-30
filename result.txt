@@ -1,0 +1,5 @@
+home: alive=True
+servers: alive=True
+tunnels: alive=True
+settings: alive=True
+mini: alive=True
