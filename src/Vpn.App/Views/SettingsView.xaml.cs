@@ -207,7 +207,7 @@ namespace NeonVpn.Views
         {
             Theme.Apply(S);
             App.Vm.Refresh();
-            App.Main?.ApplyLook();
+            App.MainWin?.ApplyLook();
             App.Mini?.ApplyLook();
             App.Tray?.Update();
             App.Vpn.Save();
@@ -218,7 +218,7 @@ namespace NeonVpn.Views
         {
             App.Vpn.Save();
             App.Vm.Refresh();
-            App.Main?.OnStateChanged(App.Vpn.State, App.Vpn.State);
+            App.MainWin?.OnStateChanged(App.Vpn.State, App.Vpn.State);
 
             if (reconnect && App.Vpn.IsOn)
             {

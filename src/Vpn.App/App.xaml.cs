@@ -16,7 +16,7 @@ namespace NeonVpn
         public static VpnService Vpn { get; private set; }
         public static MainVm Vm { get; private set; }
         public static Tray Tray { get; private set; }
-        public static MainWindow Main { get; private set; }
+        public static Views.MainWindow MainWin { get; private set; }
         public static MiniWindow Mini { get; private set; }
 
         private static Mutex single;
@@ -68,7 +68,7 @@ namespace NeonVpn
             Vm = new MainVm(Vpn);
 
             Vpn.StateChanged += () => Ui(OnStateChanged);
-            Vpn.PingsUpdated += () => Ui(() => Main?.Servers.OnPings());
+            Vpn.PingsUpdated += () => Ui(() => MainWin?.Servers.OnPings());
             Vpn.Notice += m => Ui(() => Notify(m, true));
             Vpn.AutoSwitched += (from, to, why) => Ui(() => Notify($"Авто: {from?.DisplayName} → {to?.DisplayName} ({why})", false));
 
@@ -77,9 +77,9 @@ namespace NeonVpn
             Tray.OpenMini += () => Ui(ShowMini);
             Tray.Exit += () => Ui(() => _ = ExitAsync());
 
-            Main = new MainWindow();
+            MainWin = new Views.MainWindow();
             Mini = new MiniWindow();
-            Hotkey.Register(Main, () => Ui(() => _ = Vpn.ToggleAsync()));
+            Hotkey.Register(MainWin, () => Ui(() => _ = Vpn.ToggleAsync()));
 
             // Сигнал от второй копии — показать окно.
             Task.Run(() =>
@@ -118,7 +118,7 @@ namespace NeonVpn
             try
             {
                 await Vpn.UpdateDueAsync();
-                Main?.Servers.Reload();
+                MainWin?.Servers.Reload();
                 Vm.Refresh();
             }
             catch (Exception ex)
@@ -133,11 +133,11 @@ namespace NeonVpn
             lastState = Vpn.State;
             Vm.Refresh();
             Tray.Update();
-            Main?.OnStateChanged(before, Vpn.State);
+            MainWin?.OnStateChanged(before, Vpn.State);
             Mini?.OnStateChanged(before, Vpn.State);
-            Main?.Servers.OnCurrentChanged();
+            MainWin?.Servers.OnCurrentChanged();
 
-            bool windowsHidden = (Main == null || !Main.IsVisible) && (Mini == null || !Mini.IsVisible);
+            bool windowsHidden = (MainWin == null || !MainWin.IsVisible) && (Mini == null || !Mini.IsVisible);
 
             if (windowsHidden && before != Vpn.State)
             {
@@ -150,9 +150,9 @@ namespace NeonVpn
 
         public static void Notify(string text, bool error)
         {
-            if (Main != null && Main.IsVisible && Main.WindowState != WindowState.Minimized)
+            if (MainWin != null && MainWin.IsVisible && MainWin.WindowState != WindowState.Minimized)
             {
-                Main.Toast(text, error);
+                MainWin.Toast(text, error);
             }
             else
             {
@@ -181,16 +181,16 @@ namespace NeonVpn
                 Mini.Hide();
             }
 
-            Main.ShowAndActivate();
+            MainWin.ShowAndActivate();
             Vpn.Settings.StartInMini = false;
         }
 
         public static void ShowMini()
         {
-            if (Main != null && Main.IsVisible)
+            if (MainWin != null && MainWin.IsVisible)
             {
-                Main.SavePlacement();
-                Main.Hide();
+                MainWin.SavePlacement();
+                MainWin.Hide();
             }
 
             Mini.ShowAndActivate();
@@ -207,11 +207,11 @@ namespace NeonVpn
             }
 
             app.exiting = true;
-            Main?.SavePlacement();
+            MainWin?.SavePlacement();
             Mini?.SavePlacement();
             Vpn.Save();
             Tray?.Dispose();
-            Main?.Hide();
+            MainWin?.Hide();
             Mini?.Hide();
 
             try
