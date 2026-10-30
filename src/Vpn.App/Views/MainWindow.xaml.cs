@@ -20,8 +20,12 @@ namespace NeonVpn.Views
             DataContext = App.Vm;
 
             Settings s = App.Vpn.Settings;
-            Width = Math.Max(MinWidth, s.MainWidth);
-            Height = Math.Max(MinHeight, s.MainHeight);
+            // Не больше рабочей области экрана (маленький монитор, крупный масштаб).
+            Rect work = SystemParameters.WorkArea;
+            MinWidth = Math.Min(MinWidth, work.Width);
+            MinHeight = Math.Min(MinHeight, work.Height);
+            Width = Math.Min(work.Width, Math.Max(MinWidth, s.MainWidth));
+            Height = Math.Min(work.Height, Math.Max(MinHeight, s.MainHeight));
             WindowKit.Place(this, s.MainLeft, s.MainTop);
             WindowKit.EnableDrag(this, Root);
             ApplyLook();

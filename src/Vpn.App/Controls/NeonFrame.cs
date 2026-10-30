@@ -149,7 +149,9 @@ namespace NeonVpn.Controls
             bloom.Opacity = 0.55 * k;
             bloomBlur.Radius = 10 + 10 * k;
 
-            // Корпус: почти чёрный, с подсветкой цвета акцента из угла.
+            // Корпус: непрозрачный почти чёрный, с подсветкой цвета акцента из угла.
+            // Все цвета градиента — непрозрачные: прозрачная точка давала «дыру», сквозь которую видно рабочий стол.
+            Color dark = Color.FromRgb(0x08, 0x0A, 0x11);
             RadialGradientBrush inner = new RadialGradientBrush
             {
                 Center = new Point(0.12, 0.05),
@@ -157,10 +159,16 @@ namespace NeonVpn.Controls
                 RadiusX = 0.9,
                 RadiusY = 1.1
             };
-            inner.GradientStops.Add(new GradientStop(Color.FromArgb((byte)(26 * k), a.R, a.G, a.B), 0));
-            inner.GradientStops.Add(new GradientStop(Color.FromArgb(250, 0x08, 0x0A, 0x11), 0.45));
-            inner.GradientStops.Add(new GradientStop(Color.FromArgb(252, 0x05, 0x06, 0x0A), 1));
+            inner.GradientStops.Add(new GradientStop(Blend(dark, a, 0.10 * k), 0));
+            inner.GradientStops.Add(new GradientStop(dark, 0.45));
+            inner.GradientStops.Add(new GradientStop(Color.FromRgb(0x05, 0x06, 0x0A), 1));
             fill.Fill = inner;
+        }
+
+        private static Color Blend(Color from, Color to, double t)
+        {
+            t = Math.Max(0, Math.Min(1, t));
+            return Color.FromRgb((byte)(from.R + (to.R - from.R) * t), (byte)(from.G + (to.G - from.G) * t), (byte)(from.B + (to.B - from.B) * t));
         }
 
         private void Rebuild()
