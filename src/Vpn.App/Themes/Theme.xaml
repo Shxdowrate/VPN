@@ -341,18 +341,19 @@
         <Setter Property="Foreground" Value="{DynamicResource Text}"/>
         <Setter Property="CaretBrush" Value="{DynamicResource Text}"/>
         <Setter Property="SelectionBrush" Value="{DynamicResource Dim}"/>
-        <Setter Property="Background" Value="{DynamicResource Panel}"/>
+        <Setter Property="Background" Value="{DynamicResource Bg}"/>
         <Setter Property="FontFamily" Value="{StaticResource Body}"/>
         <Setter Property="FontSize" Value="13"/>
-        <Setter Property="Padding" Value="10,7"/>
+        <Setter Property="Padding" Value="8,6"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="TextBox">
                     <Grid>
                         <Border x:Name="B" Background="{TemplateBinding Background}" CornerRadius="8" BorderBrush="{DynamicResource Line}" BorderThickness="1">
-                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" VerticalAlignment="Center"/>
+                            <!-- Padding TextBox применяет сам, второй раз через Margin не нужен -->
+                            <ScrollViewer x:Name="PART_ContentHost" VerticalAlignment="Center" Background="Transparent"/>
                         </Border>
-                        <TextBlock x:Name="Ph" Text="{TemplateBinding Tag}" Foreground="{DynamicResource Dim2}" Margin="13,0,0,0"
+                        <TextBlock x:Name="Ph" Text="{TemplateBinding Tag}" Foreground="{DynamicResource Dim2}" Margin="11,0,0,0"
                                    VerticalAlignment="Center" IsHitTestVisible="False" Visibility="Collapsed" FontSize="{TemplateBinding FontSize}"/>
                     </Grid>
                     <ControlTemplate.Triggers>

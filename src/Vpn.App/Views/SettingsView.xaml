@@ -90,7 +90,7 @@
                 <!-- DNS -->
                 <Border Style="{StaticResource Card}" Margin="0,0,0,14">
                     <StackPanel>
-                        <TextBlock Text="Dns" Style="{StaticResource H2}" Margin="0,0,0,8"/>
+                        <TextBlock Text="DNS" Style="{StaticResource H2}" Margin="0,0,0,8"/>
                         <TextBlock Text="Для сайтов через VPN (DoH, идёт через сервер)" Style="{StaticResource Hint}" Margin="0,0,0,4"/>
                         <TextBox x:Name="RemoteDns" LostFocus="OnChanged"/>
                         <TextBlock Text="Для сайтов напрямую (DoH или «system» — DNS Windows)" Style="{StaticResource Hint}" Margin="0,8,0,4"/>

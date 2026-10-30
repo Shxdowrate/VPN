@@ -128,7 +128,8 @@ foreach (CoreKind core in new[] { CoreKind.SingBox, CoreKind.Xray })
     {
         try
         {
-            if (File.ReadAllText($"/proc/{p.Id}/cmdline").Contains("main.singbox")) p.Kill();
+            // В этот момент работает только основное ядро (пробное закрыто), так что можно бить по имени.
+            if (OperatingSystem.IsWindows() || File.ReadAllText($"/proc/{p.Id}/cmdline").Contains("main.singbox")) p.Kill();
         }
         catch
         {

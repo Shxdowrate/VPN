@@ -53,6 +53,53 @@ jobs:
           SSL_CERT_FILE=$PWD/tests/LiveCheck/bundle.pem NO_PROXY= no_proxy= \
             dotnet run --project tests/LiveCheck -c Release -- "$PWD/app"
 
+  # То же самое на Windows: настоящие sing-box.exe и xray.exe — ловит то, что на Linux не видно.
+  live-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Cores and test servers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force app/core | Out-Null
+          $v = $env:SINGBOX_VERSION
+          Invoke-WebRequest "https://github.com/SagerNet/sing-box/releases/download/v$v/sing-box-$v-windows-amd64.zip" -OutFile sb.zip
+          Expand-Archive sb.zip -DestinationPath sb
+          Copy-Item "sb/sing-box-$v-windows-amd64/*" app/core/ -Recurse
+          $x = $env:XRAY_VERSION
+          Invoke-WebRequest "https://github.com/XTLS/Xray-core/releases/download/v$x/Xray-windows-64.zip" -OutFile xray.zip
+          Expand-Archive xray.zip -DestinationPath xray
+          Copy-Item xray/xray.exe app/core/
+
+          # Самоподписанный сертификат на test.local — в доверенные, имя — в hosts.
+          $cert = New-SelfSignedCertificate -DnsName "test.local" -CertStoreLocation Cert:/LocalMachine/My -KeyExportPolicy Exportable -NotAfter (Get-Date).AddDays(2)
+          $pwd = ConvertTo-SecureString -String "x" -Force -AsPlainText
+          Export-PfxCertificate -Cert $cert -FilePath tests/LiveCheck/cert.pfx -Password $pwd | Out-Null
+          Export-Certificate -Cert $cert -FilePath cert.cer | Out-Null
+          Import-Certificate -FilePath cert.cer -CertStoreLocation Cert:/LocalMachine/Root | Out-Null
+          Add-Content -Path "$env:SystemRoot/System32/drivers/etc/hosts" -Value "127.0.0.1 test.local"
+          cd tests/LiveCheck
+          python -m pip install --quiet cryptography
+          python -c "from cryptography.hazmat.primitives.serialization import pkcs12, Encoding, PrivateFormat, NoEncryption; k,c,_=pkcs12.load_key_and_certificates(open('cert.pfx','rb').read(), b'x'); open('cert.pem','wb').write(c.public_bytes(Encoding.PEM)); open('key.pem','wb').write(k.private_bytes(Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()))"
+          Start-Process -FilePath "../../app/core/xray.exe" -ArgumentList "run","-c","server.json" -RedirectStandardOutput server.log -RedirectStandardError server.err -WindowStyle Hidden
+          Start-Process -FilePath python -ArgumentList "target.py","cert.pem","key.pem" -RedirectStandardOutput target.log -RedirectStandardError target.err -WindowStyle Hidden
+          Start-Sleep -Seconds 3
+
+      - name: Live check (Windows)
+        shell: pwsh
+        run: |
+          $env:NO_PROXY = ""
+          dotnet run --project tests/LiveCheck -c Release -- "$PWD/app"
+          $code = $LASTEXITCODE
+          Get-Content app/data/vpn.log -ErrorAction SilentlyContinue | Select-Object -Last 40
+          exit $code
+
   build:
     runs-on: windows-latest
     needs: live
