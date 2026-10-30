@@ -87,19 +87,24 @@ jobs:
           cd tests/LiveCheck
           python -m pip install --quiet cryptography
           python -c "from cryptography.hazmat.primitives.serialization import pkcs12, Encoding, PrivateFormat, NoEncryption; k,c,_=pkcs12.load_key_and_certificates(open('cert.pfx','rb').read(), b'x'); open('cert.pem','wb').write(c.public_bytes(Encoding.PEM)); open('key.pem','wb').write(k.private_bytes(Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()))"
-          Start-Process -FilePath "../../app/core/xray.exe" -ArgumentList "run","-c","server.json" -RedirectStandardOutput server.log -RedirectStandardError server.err -WindowStyle Hidden
-          Start-Process -FilePath python -ArgumentList "target.py","cert.pem","key.pem" -RedirectStandardOutput target.log -RedirectStandardError target.err -WindowStyle Hidden
-          Start-Sleep -Seconds 3
 
       - name: Live check (Windows)
         shell: pwsh
         run: |
           $env:NO_PROXY = ""
           New-Item -ItemType Directory -Force livewin | Out-Null
+          # Серверы — в этом же шаге: фоновые процессы прошлого шага на Windows-раннере не живут.
+          Push-Location tests/LiveCheck
+          $srv = Start-Process -FilePath "$PWD/../../app/core/xray.exe" -ArgumentList "run","-c","server.json" -RedirectStandardOutput "$PWD/../../livewin/server.log" -RedirectStandardError "$PWD/../../livewin/server.err" -WindowStyle Hidden -PassThru
+          $tgt = Start-Process -FilePath python -ArgumentList "target.py","cert.pem","key.pem" -RedirectStandardOutput "$PWD/../../livewin/target.log" -RedirectStandardError "$PWD/../../livewin/target.err" -WindowStyle Hidden -PassThru
+          Pop-Location
+          Start-Sleep -Seconds 3
+          Get-NetTCPConnection -State Listen | Where-Object { $_.LocalPort -in 30001,30002,30003,30004,18080,18443 } | Format-Table LocalAddress, LocalPort, OwningProcess | Out-String | Tee-Object livewin/listen.txt
+          try { (Invoke-WebRequest -UseBasicParsing https://test.local:18443/generate_204).StatusCode | Tee-Object livewin/https.txt } catch { $_.Exception.Message | Tee-Object livewin/https.txt }
           dotnet run --project tests/LiveCheck -c Release -- "$PWD/app" 2>&1 | Tee-Object livewin/output.txt
           $code = $LASTEXITCODE
-          Copy-Item app/data/vpn.log, app/data/run/*.json livewin/ -ErrorAction SilentlyContinue
-          Copy-Item tests/LiveCheck/server.log, tests/LiveCheck/server.err, tests/LiveCheck/target.err livewin/ -ErrorAction SilentlyContinue
+          Copy-Item app/data/vpn.log livewin/ -ErrorAction SilentlyContinue
+          Copy-Item app/data/run/*.json livewin/ -ErrorAction SilentlyContinue
           exit $code
 
       - name: Publish live check results
