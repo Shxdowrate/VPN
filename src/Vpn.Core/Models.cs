@@ -141,9 +141,20 @@ namespace NeonVpn.Core
         public long Expire { get; set; }
         public string Error { get; set; } = "";
 
+        /// <summary>Настройки от провайдера (заголовки подписки): фрагментация, шум, mux, DNS для адресов серверов.</summary>
+        public Dictionary<string, string> Hints { get; set; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Каким клиентом представились панели при последнем удачном обновлении (Happ / v2rayN / sing-box).</summary>
+        public string Client { get; set; } = "";
+
         /// <summary>Интервал автообновления (часы), 0 — не обновлять.</summary>
         public int UpdateHours { get; set; } = 12;
 
+        public string Hint(string key) => Hints != null && Hints.TryGetValue(key, out string v) ? v.Trim() : "";
+
+        public bool HintOn(string key) => Hint(key) is "1" or "true" or "True";
+
+        [JsonIgnore]
         public IEnumerable<ServerNode> Active => Enabled ? Servers.Where(s => !Excluded.Contains(s.Key)) : Enumerable.Empty<ServerNode>();
     }
 

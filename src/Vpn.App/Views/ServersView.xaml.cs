@@ -126,6 +126,7 @@ namespace NeonVpn.Views
             }
 
             if (parts.Count == 0 && sub.Updated != null) parts.Add("обновлена " + sub.Updated.Value.ToString("dd.MM HH:mm"));
+            if (sub.Client.Length > 0) parts.Add("как " + sub.Client);
             return string.Join(" · ", parts);
         }
 

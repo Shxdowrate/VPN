@@ -36,6 +36,12 @@ namespace NeonVpn.Core
         /// <summary>Насколько новый сервер должен быть быстрее, чтобы «Авто» переключилось (мс) — чтобы не дёргаться.</summary>
         public int AutoTolerance { get; set; } = 60;
 
+        /// <summary>DoH для адресов самих серверов (https://…/dns-query). Пусто — DNS системы или то, что прислал провайдер.</summary>
+        public string ServerDns { get; set; } = "";
+
+        /// <summary>Применять настройки, которые провайдер присылает в подписке для Happ (фрагментация, шум, mux, DNS).</summary>
+        public bool ProviderSettings { get; set; } = true;
+
         public string TestUrl { get; set; } = "https://www.gstatic.com/generate_204";
         public string RemoteDns { get; set; } = "1.1.1.1";
         public string LocalDns { get; set; } = "77.88.8.8";

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Net.Http;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -270,16 +271,68 @@ namespace NeonVpn.Core
             int xrayCount = nodes.Count;
             int xrayBase = CoreRunner.FreePortRange(probeOnly ? 23100 : 21100, xrayCount);
 
-            return ConfigBuilder.Build(Settings, nodes, startKey, new ConfigBuilder.Options
+            ConfigBuilder.Options opt = new ConfigBuilder.Options
             {
                 ProbeOnly = probeOnly,
                 ApiPort = api,
                 XrayPortBase = xrayBase,
                 SelfProcesses = selfProcesses,
                 XrayFragment = Settings.XrayFragment,
+                ServerDoh = Settings.ServerDns ?? "",
                 HaveXray = System.IO.File.Exists(Paths.Xray),
                 HaveSingBox = true
-            });
+            };
+
+            ApplyProviderHints(opt, nodes);
+            return ConfigBuilder.Build(Settings, nodes, startKey, opt);
+        }
+
+        /// <summary>
+        /// Настройки, которые провайдер прислал в подписке для Happ (фрагментация, шум, mux, DNS адресов серверов).
+        /// Happ их применяет, и без них серверы некоторых провайдеров на мобильном интернете не отвечают.
+        /// </summary>
+        private void ApplyProviderHints(ConfigBuilder.Options opt, List<ServerNode> nodes)
+        {
+            HashSet<string> used = new HashSet<string>(nodes.Select(n => n.SourceId));
+
+            foreach (SubscriptionInfo sub in Settings.Subscriptions.Where(x => used.Contains(x.Id) && x.Hints != null && x.Hints.Count > 0))
+            {
+                if (sub.HintOn("fragmentation-enable") && Settings.ProviderSettings)
+                {
+                    opt.XrayFragment = true;
+                    if (sub.Hint("fragmentation-packets").Length > 0) opt.FragmentPackets = sub.Hint("fragmentation-packets");
+                    if (sub.Hint("fragmentation-length").Length > 0) opt.FragmentLength = sub.Hint("fragmentation-length");
+                    if (sub.Hint("fragmentation-interval").Length > 0) opt.FragmentInterval = sub.Hint("fragmentation-interval");
+                }
+
+                if (sub.HintOn("noises-enable") && Settings.ProviderSettings)
+                {
+                    string type = sub.Hint("noises-packet-type");
+                    string packet = sub.Hint("noises-packet");
+                    string delay = sub.Hint("noises-delay");
+                    JsonObject noise = new JsonObject
+                    {
+                        ["type"] = type is "str" or "hex" or "base64" ? type : "rand",
+                        ["packet"] = packet.Length > 0 ? packet : sub.Hint("noises-rand").Length > 0 ? sub.Hint("noises-rand") : "10-20",
+                        ["delay"] = delay.Length > 0 ? delay : "10-16"
+                    };
+                    opt.Noises = new JsonArray(noise);
+                }
+
+                if (sub.HintOn("mux-enable") && Settings.ProviderSettings)
+                {
+                    opt.Mux = true;
+                }
+
+                if (opt.ServerDoh.Length == 0 && sub.HintOn("server-address-resolve-enable") && Settings.ProviderSettings)
+                {
+                    string doh = sub.Hint("server-address-resolve-dns-domain");
+                    string ip = sub.Hint("server-address-resolve-dns-ip");
+
+                    if (doh.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) opt.ServerDoh = doh;
+                    else if (ip.Length > 0) opt.ServerDoh = "https://" + ip + "/dns-query";
+                }
+            }
         }
 
         private async Task DisconnectCore(string text)

@@ -95,6 +95,11 @@
                         <TextBox x:Name="RemoteDns" LostFocus="OnChanged"/>
                         <TextBlock Text="Для сайтов напрямую (DoH или «system» — DNS Windows)" Style="{StaticResource Hint}" Margin="0,8,0,4"/>
                         <TextBox x:Name="LocalDns" LostFocus="OnChanged"/>
+                        <TextBlock Text="Для адресов самих серверов (DoH; пусто — DNS системы)" Style="{StaticResource Hint}" Margin="0,8,0,4"/>
+                        <TextBox x:Name="ServerDns" LostFocus="OnChanged" Tag="https://dns.google/dns-query"/>
+                        <CheckBox x:Name="ProviderSettings" Click="OnChanged" Margin="0,10,0,0">
+                            <TextBlock Style="{StaticResource BodyText}">Применять настройки провайдера<LineBreak/><Run Foreground="{DynamicResource Dim}" FontSize="11.5">фрагментацию, шум, mux и DNS, которые подписка присылает для Happ</Run></TextBlock>
+                        </CheckBox>
                     </StackPanel>
                 </Border>
 

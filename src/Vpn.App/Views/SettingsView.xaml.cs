@@ -74,6 +74,8 @@ namespace NeonVpn.Views
             TestUrl.Text = S.TestUrl;
             RemoteDns.Text = S.RemoteDns;
             LocalDns.Text = S.LocalDns;
+            ServerDns.Text = S.ServerDns;
+            ProviderSettings.IsChecked = S.ProviderSettings;
             AutostartBox.IsChecked = S.Autostart;
             AutoConnect.IsChecked = S.ConnectOnLaunch;
             StartHidden.IsChecked = S.StartMinimized;
@@ -155,6 +157,20 @@ namespace NeonVpn.Views
 
             if (RemoteDns.Text.Trim().Length > 0 && RemoteDns.Text.Trim() != S.RemoteDns) { S.RemoteDns = RemoteDns.Text.Trim(); reconnect = true; }
             if (LocalDns.Text.Trim().Length > 0 && LocalDns.Text.Trim() != S.LocalDns) { S.LocalDns = LocalDns.Text.Trim(); reconnect = true; }
+
+            string serverDns = ServerDns.Text.Trim();
+
+            if (serverDns.Length == 0 || serverDns.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                if (serverDns != S.ServerDns) { S.ServerDns = serverDns; reconnect = true; }
+            }
+            else
+            {
+                ServerDns.Text = S.ServerDns;
+                App.Notify("DNS для серверов — адрес DoH, начинается с https://", true);
+            }
+
+            if (S.ProviderSettings != (ProviderSettings.IsChecked == true)) { S.ProviderSettings = ProviderSettings.IsChecked == true; reconnect = true; }
 
             if (S.Autostart != (AutostartBox.IsChecked == true))
             {

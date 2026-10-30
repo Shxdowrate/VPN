@@ -91,16 +91,23 @@ namespace NeonVpn.Core
             return o;
         }
 
-        /// <summary>Вспомогательный outbound, через который идут соединения с фрагментацией.</summary>
-        public static JsonObject FragmentOutbound() => new JsonObject
+        /// <summary>Вспомогательный outbound, через который идут соединения с фрагментацией и/или «шумом».</summary>
+        public static JsonObject FragmentOutbound(bool fragment = true, string packets = "tlshello", string length = "100-200", string interval = "10-20", JsonArray noises = null)
         {
-            ["tag"] = "fragment",
-            ["protocol"] = "freedom",
-            ["settings"] = new JsonObject
+            JsonObject settings = new JsonObject();
+
+            if (fragment)
             {
-                ["fragment"] = new JsonObject { ["packets"] = "tlshello", ["length"] = "100-200", ["interval"] = "10-20" }
+                settings["fragment"] = new JsonObject { ["packets"] = packets, ["length"] = length, ["interval"] = interval };
             }
-        };
+
+            if (noises != null && noises.Count > 0)
+            {
+                settings["noises"] = noises.DeepClone();
+            }
+
+            return new JsonObject { ["tag"] = "fragment", ["protocol"] = "freedom", ["settings"] = settings };
+        }
 
         private static JsonObject Vnext(ServerNode n, JsonObject user) => new JsonObject
         {

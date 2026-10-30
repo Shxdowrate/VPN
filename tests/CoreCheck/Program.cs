@@ -127,6 +127,23 @@ foreach (var v in variants)
     Check(plan.InitialTag == "n0", v.name + ": стартовый сервер");
 }
 
+// Настройки провайдера (как у Happ): фрагментация, шум, mux, DoH для адресов серверов.
+foreach (var (name, core, doh) in new[] { ("hints-singbox", CoreKind.SingBox, "https://dns.google/dns-query"), ("hints-xray", CoreKind.Xray, "https://1.1.1.1/dns-query") })
+{
+    settings.Core = core;
+    settings.UseTun = true;
+    var opt = new ConfigBuilder.Options
+    {
+        XrayFragment = true, FragmentPackets = "tlshello", FragmentLength = "50-100", FragmentInterval = "10-20",
+        Noises = new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonObject { ["type"] = "rand", ["packet"] = "10-20", ["delay"] = "10-16" }),
+        Mux = true, ServerDoh = doh
+    };
+    Plan hp = ConfigBuilder.Build(settings, s1.Active, s1.Servers[0].Key, opt);
+    File.WriteAllText(Path.Combine(outDir, name + ".singbox.json"), hp.SingBoxJson);
+    if (hp.XrayJson != null) File.WriteAllText(Path.Combine(outDir, name + ".xray.json"), hp.XrayJson);
+    Check(hp.SingBoxJson.Contains("server-dns") && (hp.XrayJson == null || hp.XrayJson.Contains("local://")), name + ": DoH для адресов серверов");
+}
+
 Check(ConfigBuilder.NormalizeDomain("https://www.YouTube.com/watch") == "youtube.com", "нормализация домена");
 Check(ConfigBuilder.NormalizeDomain("сайт.рф") == "xn--80aswg.xn--p1ai", "кириллический домен → punycode");
 

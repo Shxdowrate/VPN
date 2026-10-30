@@ -75,6 +75,21 @@ namespace NeonVpn.Core
             public string[] SelfProcesses = { "VPN.exe" };
 
             public bool XrayFragment;
+
+            /// <summary>Параметры фрагментации TLS ClientHello (как в Happ: packets / length / interval).</summary>
+            public string FragmentPackets = "tlshello";
+            public string FragmentLength = "100-200";
+            public string FragmentInterval = "10-20";
+
+            /// <summary>«Шум» перед соединением (Xray noises), null — без шума.</summary>
+            public JsonArray Noises;
+
+            /// <summary>Mux для VLESS/VMess без flow.</summary>
+            public bool Mux;
+
+            /// <summary>DoH-адрес, через который узнавать IP серверов (обход подменённого DNS провайдера). Пусто — DNS системы.</summary>
+            public string ServerDoh = "";
+
             public bool HaveXray = true;
             public bool HaveSingBox = true;
         }
@@ -154,9 +169,23 @@ namespace NeonVpn.Core
 
             foreach (PlanNode n in plan.Nodes)
             {
-                outbounds.Add(n.Engine == Engine.SingBox
-                    ? SingBoxOutbound.Build(n.Server, n.Tag)
-                    : new JsonObject
+                JsonObject sbOut = n.Engine == Engine.SingBox ? SingBoxOutbound.Build(n.Server, n.Tag) : null;
+
+                if (sbOut != null)
+                {
+                    if (opt.ServerDoh.Length > 0)
+                    {
+                        sbOut["domain_resolver"] = "server-dns";
+                    }
+
+                    // Фрагментация ClientHello — и в sing-box (кроме QUIC-протоколов).
+                    if (opt.XrayFragment && sbOut["tls"] is JsonObject tls && n.Server.Protocol is not ("hysteria2" or "tuic"))
+                    {
+                        tls["fragment"] = true;
+                    }
+                }
+
+                outbounds.Add(sbOut ?? new JsonObject
                     {
                         ["type"] = "socks",
                         ["tag"] = n.Tag,
@@ -189,7 +218,7 @@ namespace NeonVpn.Core
                 // Только пинговать серверы: без входов и правил.
                 config["dns"] = new JsonObject
                 {
-                    ["servers"] = new JsonArray { new JsonObject { ["type"] = "local", ["tag"] = "local" } }
+                    ["servers"] = WithServerDns(new JsonArray { new JsonObject { ["type"] = "local", ["tag"] = "local" } }, opt)
                 };
                 config["route"] = new JsonObject { ["final"] = Direct, ["default_domain_resolver"] = "local" };
                 return config;
@@ -337,17 +366,34 @@ namespace NeonVpn.Core
 
             config["dns"] = new JsonObject
             {
-                ["servers"] = new JsonArray
+                ["servers"] = WithServerDns(new JsonArray
                 {
                     new JsonObject { ["type"] = "https", ["tag"] = "remote", ["server"] = s.RemoteDns, ["detour"] = Proxy },
                     LocalDnsServer(s.LocalDns)
-                },
+                }, opt),
                 ["rules"] = dnsRules,
                 ["final"] = defaultVpn && plan.Nodes.Count > 0 ? "remote" : "local",
                 ["strategy"] = "ipv4_only"
             };
 
             return config;
+        }
+
+        /// <summary>DoH для адресов серверов: https://host/path → сервер sing-box «server-dns» (идёт напрямую).</summary>
+        private static JsonArray WithServerDns(JsonArray servers, Options opt)
+        {
+            if (opt.ServerDoh.Length > 0 && Uri.TryCreate(opt.ServerDoh, UriKind.Absolute, out Uri u))
+            {
+                JsonObject doh = new JsonObject { ["type"] = "https", ["tag"] = "server-dns", ["server"] = u.Host };
+
+                if (!u.IsDefaultPort) doh["server_port"] = u.Port;
+                if (u.AbsolutePath.Length > 1) doh["path"] = u.AbsolutePath;
+                if (u.HostNameType == UriHostNameType.Dns) doh["domain_resolver"] = "local";
+
+                servers.Add(doh);
+            }
+
+            return servers;
         }
 
         /// <summary>«system» — DNS Windows (учитывает hosts и DNS провайдера), иначе DoH на указанный адрес.</summary>
@@ -395,16 +441,33 @@ namespace NeonVpn.Core
                     }
                 });
 
-                outbounds.Add(XrayOutbound.Build(n.Server, n.Tag, opt.XrayFragment));
+                JsonObject ob = XrayOutbound.Build(n.Server, n.Tag, opt.XrayFragment || opt.Noises != null);
+
+                if (opt.ServerDoh.Length > 0)
+                {
+                    // Адрес сервера — через встроенный DNS Xray (DoH ниже), а не через DNS системы.
+                    JsonObject stream = ob["streamSettings"] as JsonObject ?? new JsonObject();
+                    JsonObject sockopt = stream["sockopt"] as JsonObject ?? new JsonObject();
+                    sockopt["domainStrategy"] = "UseIPv4";
+                    stream["sockopt"] = sockopt;
+                    ob["streamSettings"] = stream;
+                }
+
+                if (opt.Mux && ob["mux"] == null && n.Server.Protocol is "vless" or "vmess" && n.Server.P("flow").Length == 0)
+                {
+                    ob["mux"] = new JsonObject { ["enabled"] = true, ["concurrency"] = 8, ["xudpConcurrency"] = 16 };
+                }
+
+                outbounds.Add(ob);
                 rules.Add(new JsonObject { ["type"] = "field", ["inboundTag"] = Arr("in-" + n.Tag), ["outboundTag"] = n.Tag });
             }
 
-            if (opt.XrayFragment)
+            if (opt.XrayFragment || opt.Noises != null)
             {
-                outbounds.Add(XrayOutbound.FragmentOutbound());
+                outbounds.Add(XrayOutbound.FragmentOutbound(opt.XrayFragment, opt.FragmentPackets, opt.FragmentLength, opt.FragmentInterval, opt.Noises));
             }
 
-            return new JsonObject
+            JsonObject xray = new JsonObject
             {
                 // info — чтобы видеть, почему сервер не отвечает (CoreRunner вылавливает эти строки и отбрасывает остальное).
                 ["log"] = new JsonObject { ["loglevel"] = "info", ["access"] = "none" },
@@ -412,6 +475,14 @@ namespace NeonVpn.Core
                 ["outbounds"] = outbounds,
                 ["routing"] = new JsonObject { ["domainStrategy"] = "AsIs", ["rules"] = rules }
             };
+
+            if (opt.ServerDoh.Length > 0)
+            {
+                // https+local — запрос идёт напрямую, а не через маршрутизацию (иначе попал бы в первый outbound).
+                xray["dns"] = new JsonObject { ["servers"] = new JsonArray((JsonNode)("https+local://" + opt.ServerDoh.Substring("https://".Length))), ["queryStrategy"] = "UseIPv4" };
+            }
+
+            return xray;
         }
 
         // ================================================================== мелочи
