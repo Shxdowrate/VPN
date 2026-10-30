@@ -59,13 +59,13 @@
         <Setter Property="Foreground" Value="{DynamicResource Dim}"/>
         <Setter Property="Typography.Capitals" Value="AllSmallCaps"/>
     </Style>
-    <Style x:Key="Body" TargetType="TextBlock">
+    <Style x:Key="BodyText" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource Body}"/>
         <Setter Property="FontSize" Value="13"/>
         <Setter Property="Foreground" Value="{DynamicResource Text}"/>
         <Setter Property="TextWrapping" Value="Wrap"/>
     </Style>
-    <Style x:Key="Hint" TargetType="TextBlock" BasedOn="{StaticResource Body}">
+    <Style x:Key="Hint" TargetType="TextBlock" BasedOn="{StaticResource BodyText}">
         <Setter Property="FontSize" Value="12"/>
         <Setter Property="Foreground" Value="{DynamicResource Dim}"/>
     </Style>

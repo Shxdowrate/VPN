@@ -20,7 +20,7 @@
                         </WrapPanel>
                         <TextBlock x:Name="CoreHint" Style="{StaticResource Hint}" FontSize="11.5" Margin="0,2,0,8"/>
                         <CheckBox x:Name="Fragment" Click="OnChanged">
-                            <TextBlock Style="{StaticResource Body}">Фрагментация TLS (Xray)<LineBreak/><Run Foreground="{DynamicResource Dim}" FontSize="11.5">режет ClientHello на куски — помогает, когда мобильный оператор душит VPN</Run></TextBlock>
+                            <TextBlock Style="{StaticResource BodyText}">Фрагментация TLS (Xray)<LineBreak/><Run Foreground="{DynamicResource Dim}" FontSize="11.5">режет ClientHello на куски — помогает, когда мобильный оператор душит VPN</Run></TextBlock>
                         </CheckBox>
                         <TextBlock x:Name="CoreFiles" Style="{StaticResource Hint}" FontSize="11" Margin="0,6,0,0"/>
                     </StackPanel>
@@ -31,17 +31,17 @@
                     <StackPanel>
                         <TextBlock Text="РЕЖИМ" Style="{StaticResource Caps}" FontSize="12" Foreground="{DynamicResource Accent}" Margin="0,0,0,8"/>
                         <CheckBox x:Name="Tun" Click="OnChanged">
-                            <TextBlock Style="{StaticResource Body}">TUN — виртуальный адаптер<LineBreak/><Run Foreground="{DynamicResource Dim}" FontSize="11.5">весь трафик системы: игры, мессенджеры, всё</Run></TextBlock>
+                            <TextBlock Style="{StaticResource BodyText}">TUN — виртуальный адаптер<LineBreak/><Run Foreground="{DynamicResource Dim}" FontSize="11.5">весь трафик системы: игры, мессенджеры, всё</Run></TextBlock>
                         </CheckBox>
                         <CheckBox x:Name="SysProxy" Click="OnChanged">
-                            <TextBlock Style="{StaticResource Body}">Системный прокси Windows<LineBreak/><Run Foreground="{DynamicResource Dim}" FontSize="11.5">браузеры и программы, которые его понимают; можно вместе с TUN</Run></TextBlock>
+                            <TextBlock Style="{StaticResource BodyText}">Системный прокси Windows<LineBreak/><Run Foreground="{DynamicResource Dim}" FontSize="11.5">браузеры и программы, которые его понимают; можно вместе с TUN</Run></TextBlock>
                         </CheckBox>
                         <DockPanel Margin="0,8,0,0">
-                            <TextBlock Text="Порт прокси" Style="{StaticResource Body}" VerticalAlignment="Center" Width="120"/>
+                            <TextBlock Text="Порт прокси" Style="{StaticResource BodyText}" VerticalAlignment="Center" Width="120"/>
                             <TextBox x:Name="Port" Width="90" HorizontalAlignment="Left" LostFocus="OnChanged"/>
                         </DockPanel>
                         <CheckBox x:Name="Lan" Click="OnChanged" Margin="0,8,0,0">
-                            <TextBlock Style="{StaticResource Body}">Пускать устройства из локальной сети<LineBreak/><Run Foreground="{DynamicResource Dim}" FontSize="11.5">телефон или приставка смогут ходить через этот ПК по порту прокси</Run></TextBlock>
+                            <TextBlock Style="{StaticResource BodyText}">Пускать устройства из локальной сети<LineBreak/><Run Foreground="{DynamicResource Dim}" FontSize="11.5">телефон или приставка смогут ходить через этот ПК по порту прокси</Run></TextBlock>
                         </CheckBox>
                     </StackPanel>
                 </Border>
@@ -82,7 +82,7 @@
                             <RadioButton x:Name="Glow4" Style="{StaticResource RadioChip}" GroupName="glow" Click="OnLook" Tag="1.6">УЛЬТРА</RadioButton>
                         </WrapPanel>
                         <CheckBox x:Name="Anim" Click="OnLook" Margin="0,6,0,0">
-                            <TextBlock Style="{StaticResource Body}">Бегущий перелив по рамке</TextBlock>
+                            <TextBlock Style="{StaticResource BodyText}">Бегущий перелив по рамке</TextBlock>
                         </CheckBox>
                     </StackPanel>
                 </Border>
@@ -92,13 +92,13 @@
                     <StackPanel>
                         <TextBlock Text="ЗАПУСК" Style="{StaticResource Caps}" FontSize="12" Foreground="{DynamicResource Accent}" Margin="0,0,0,8"/>
                         <CheckBox x:Name="AutostartBox" Click="OnChanged">
-                            <TextBlock Style="{StaticResource Body}">Запускать вместе с Windows</TextBlock>
+                            <TextBlock Style="{StaticResource BodyText}">Запускать вместе с Windows</TextBlock>
                         </CheckBox>
                         <CheckBox x:Name="AutoConnect" Click="OnChanged">
-                            <TextBlock Style="{StaticResource Body}">Сразу подключаться при запуске</TextBlock>
+                            <TextBlock Style="{StaticResource BodyText}">Сразу подключаться при запуске</TextBlock>
                         </CheckBox>
                         <CheckBox x:Name="StartHidden" Click="OnChanged">
-                            <TextBlock Style="{StaticResource Body}">При автозапуске — только в трее</TextBlock>
+                            <TextBlock Style="{StaticResource BodyText}">При автозапуске — только в трее</TextBlock>
                         </CheckBox>
                     </StackPanel>
                 </Border>

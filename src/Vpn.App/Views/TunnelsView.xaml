@@ -23,13 +23,13 @@
 
                 <TextBlock Text="ГОТОВЫЕ ПРАВИЛА" Style="{StaticResource Caps}" Margin="0,0,0,6"/>
                 <CheckBox x:Name="RuDirect" Click="OnPreset">
-                    <TextBlock Style="{StaticResource Body}">Российские сайты и IP — напрямую<LineBreak/><Run Foreground="{DynamicResource Dim}" FontSize="11.5">банки, госуслуги, ВК, Яндекс не ругаются на VPN</Run></TextBlock>
+                    <TextBlock Style="{StaticResource BodyText}">Российские сайты и IP — напрямую<LineBreak/><Run Foreground="{DynamicResource Dim}" FontSize="11.5">банки, госуслуги, ВК, Яндекс не ругаются на VPN</Run></TextBlock>
                 </CheckBox>
                 <CheckBox x:Name="LanDirect" Click="OnPreset">
-                    <TextBlock Style="{StaticResource Body}">Локальная сеть — напрямую<LineBreak/><Run Foreground="{DynamicResource Dim}" FontSize="11.5">роутер, принтер, NAS, телевизор</Run></TextBlock>
+                    <TextBlock Style="{StaticResource BodyText}">Локальная сеть — напрямую<LineBreak/><Run Foreground="{DynamicResource Dim}" FontSize="11.5">роутер, принтер, NAS, телевизор</Run></TextBlock>
                 </CheckBox>
                 <CheckBox x:Name="Ads" Click="OnPreset">
-                    <TextBlock Style="{StaticResource Body}">Блокировать рекламу и трекеры</TextBlock>
+                    <TextBlock Style="{StaticResource BodyText}">Блокировать рекламу и трекеры</TextBlock>
                 </CheckBox>
 
                 <TextBlock Text="БЫСТРО ДОБАВИТЬ" Style="{StaticResource Caps}" Margin="0,18,0,6"/>
