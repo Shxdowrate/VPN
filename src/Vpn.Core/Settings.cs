@@ -49,6 +49,12 @@ namespace NeonVpn.Core
         public string Accent2 { get; set; } = "#00E5FF";
         public bool Animations { get; set; } = true;
 
+        /// <summary>Силуэт окна: Blade (срезанные углы и выступ), Shard (асимметричный осколок), Capsule (скруглённый).</summary>
+        public string FrameShape { get; set; } = "Blade";
+
+        /// <summary>Яркость свечения 0.3–1.5.</summary>
+        public double Glow { get; set; } = 1.0;
+
         public double MainLeft { get; set; } = double.NaN;
         public double MainTop { get; set; } = double.NaN;
         public double MainWidth { get; set; } = 1040;

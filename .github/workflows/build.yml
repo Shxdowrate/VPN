@@ -2,7 +2,7 @@ name: build
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "rewrite-neon"]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
@@ -12,10 +12,50 @@ permissions:
 
 env:
   SINGBOX_VERSION: "1.14.3"
+  XRAY_VERSION: "26.10.29"
 
 jobs:
+  # Живая проверка логики на Linux: настоящие sing-box и Xray, локальные тестовые серверы.
+  live:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Cores and test servers
+        run: |
+          set -e
+          mkdir -p app/core
+          curl -sSfL "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/sing-box-${SINGBOX_VERSION}-linux-amd64.tar.gz" | tar xz
+          cp sing-box-${SINGBOX_VERSION}-linux-amd64/sing-box app/core/
+          curl -sSfL -o xray.zip "https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/Xray-linux-64.zip"
+          unzip -q xray.zip -d xray && cp xray/xray app/core/ && chmod +x app/core/*
+          cd tests/LiveCheck
+          openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 2 -subj "/CN=test.local" \
+            -addext "subjectAltName=DNS:test.local,DNS:localhost,IP:127.0.0.1" 2>/dev/null
+          cat /etc/ssl/certs/ca-certificates.crt cert.pem > bundle.pem
+          echo "127.0.0.1 test.local" | sudo tee -a /etc/hosts
+          nohup ../../app/core/xray run -c server.json > server.log 2>&1 &
+          nohup python3 target.py cert.pem key.pem > target.log 2>&1 &
+          sleep 2
+
+      - name: Core checks
+        run: |
+          dotnet run --project tests/CoreCheck -c Release -- app/rules test-configs
+          for f in test-configs/*.singbox.json; do app/core/sing-box check -c "$f" || exit 1; done
+          for f in test-configs/*.xray.json; do app/core/xray run -test -c "$f" > /dev/null || exit 1; done
+
+      - name: Live check
+        run: |
+          SSL_CERT_FILE=$PWD/tests/LiveCheck/bundle.pem NO_PROXY= no_proxy= \
+            dotnet run --project tests/LiveCheck -c Release -- "$PWD/app"
+
   build:
     runs-on: windows-latest
+    needs: live
     steps:
       - uses: actions/checkout@v4
 
@@ -26,40 +66,53 @@ jobs:
       - name: Publish VPN.exe
         shell: pwsh
         run: |
-          dotnet publish src/VPN/VPN.csproj -c Release -r win-x64 --self-contained true `
+          dotnet publish src/Vpn.App/Vpn.App.csproj -c Release -r win-x64 --self-contained true `
             -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
             -p:EnableCompressionInSingleFile=true -p:DebugType=none -o out/VPN 2>&1 | Tee-Object -FilePath build.log
           if ($LASTEXITCODE -ne 0) { throw "publish failed" }
 
-      - name: Bundle sing-box and rule sets
+      - name: Bundle sing-box, Xray and rule sets
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $v = $env:SINGBOX_VERSION
           New-Item -ItemType Directory -Force out/VPN/core, out/VPN/rules | Out-Null
+
+          $v = $env:SINGBOX_VERSION
           Invoke-WebRequest "https://github.com/SagerNet/sing-box/releases/download/v$v/sing-box-$v-windows-amd64.zip" -OutFile sb.zip
           Expand-Archive sb.zip -DestinationPath sb
           Copy-Item "sb/sing-box-$v-windows-amd64/*" out/VPN/core/ -Recurse
+
+          $x = $env:XRAY_VERSION
+          Invoke-WebRequest "https://github.com/XTLS/Xray-core/releases/download/v$x/Xray-windows-64.zip" -OutFile xray.zip
+          Expand-Archive xray.zip -DestinationPath xray
+          Copy-Item xray/xray.exe, xray/geoip.dat, xray/geosite.dat out/VPN/core/
+
           $rules = @{
             "geoip-ru.srs" = "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ru.srs";
             "geosite-category-ru.srs" = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ru.srs";
             "geosite-category-ads-all.srs" = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-all.srs"
           }
           foreach ($k in $rules.Keys) { Invoke-WebRequest $rules[$k] -OutFile "out/VPN/rules/$k" }
+
           & out/VPN/core/sing-box.exe version
+          & out/VPN/core/xray.exe version
           Get-ChildItem -Recurse out/VPN | Select-Object FullName, Length | Format-Table -AutoSize
 
-      - name: Check generated config with sing-box
+      - name: Check configs with the Windows cores
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          dotnet run --project tests/ConfigCheck/ConfigCheck.csproj -c Release -- out/VPN/rules test-config.json 2>&1 | Tee-Object -FilePath build.log -Append
-          if ($LASTEXITCODE -ne 0) { throw "ConfigCheck failed" }
-          foreach ($f in @("test-config.json", "test-config.direct.json")) {
-            & out/VPN/core/sing-box.exe check -c $f 2>&1 | Tee-Object -FilePath build.log -Append
-            if ($LASTEXITCODE -ne 0) { Get-Content $f | Add-Content build.log; throw "sing-box rejected $f" }
+          dotnet run --project tests/CoreCheck/CoreCheck.csproj -c Release -- out/VPN/rules test-configs 2>&1 | Tee-Object -FilePath build.log -Append
+          if ($LASTEXITCODE -ne 0) { throw "CoreCheck failed" }
+          foreach ($f in Get-ChildItem test-configs -Filter *.singbox.json) {
+            & out/VPN/core/sing-box.exe check -c $f.FullName 2>&1 | Tee-Object -FilePath build.log -Append
+            if ($LASTEXITCODE -ne 0) { Get-Content $f.FullName | Add-Content build.log; throw "sing-box rejected $($f.Name)" }
           }
-          Write-Host "Config OK"
+          foreach ($f in Get-ChildItem test-configs -Filter *.xray.json) {
+            & out/VPN/core/xray.exe run -test -c $f.FullName 2>&1 | Tee-Object -FilePath build.log -Append
+            if ($LASTEXITCODE -ne 0) { throw "xray rejected $($f.Name)" }
+          }
+          Write-Host "Configs OK"
 
       - name: Publish build log on failure
         if: failure()

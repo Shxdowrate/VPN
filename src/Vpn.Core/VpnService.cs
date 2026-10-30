@@ -149,7 +149,10 @@ namespace NeonVpn.Core
             await main.StopAsync();
             RestoreProxy();
 
-            List<ServerNode> candidates = Settings.AllActive().ToList();
+            // В работающий набор кладём все серверы включённых подписок (и с галочкой, и без):
+            // тогда ручной выбор и галочки переключаются мгновенно, без перезапуска ядра.
+            // «Авто» и «Лучший» всё равно смотрят только на серверы с галочкой.
+            List<ServerNode> candidates = Settings.Subscriptions.Where(x => x.Enabled).SelectMany(x => x.Servers).ToList();
             Target t = Settings.Target;
             ServerNode start = null;
 
@@ -176,7 +179,7 @@ namespace NeonVpn.Core
                 if (scope.Count == 0 && t.Scope != ScopeKind.All)
                 {
                     Notice?.Invoke("В «" + Settings.ScopeName(t.Scope, t.ScopeId) + "» нет включённых серверов — беру из всех.");
-                    scope = candidates;
+                    scope = Settings.AllActive().ToList();
                 }
 
                 // Лучший по последним пингам; после подключения «Авто» сразу перепроверит всех.
